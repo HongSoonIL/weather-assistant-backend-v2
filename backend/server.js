@@ -75,6 +75,7 @@ app.post('/gemini', async (req, res) => {
       }
     );
 
+    //텍스트 클렌징
     const raw = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '';    
     // 1) 볼드 마크다운 제거
     let formatted = raw.replace(/\*\*/g, '');
