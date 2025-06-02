@@ -12,7 +12,7 @@ const PORT = 4000;
 const GEMINI_API_KEY = 'AIzaSyAsxn4RLgLzEc8FuuEh9F5fo4JzQp9YjZo';
 // const GEMINI_MODEL = process.env.GEMINI_MODEL;
 // const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const OPENWEATHER_API_KEY = 'a72c7174a9b30d55f73d52a104868e49'; // 여기에_OpenWeather_API_키
+const OPENWEATHER_API_KEY = '81e4f6ae97b20ee022116a9ddae47b63'; // 여기에_OpenWeather_API_키
 const GOOGLE_MAPS_API_KEY = 'AIzaSyAiZGWeaxSGW5pHHl7DvlMFp80y_pnO1Fg' // GOOGLE_MAPS API: 위치 받아오기
 
 app.use(cors());
@@ -52,21 +52,24 @@ app.post('/reverse-geocode', async (req, res) => {
 
 // OpenWeather 불러오기
 async function getWeatherByCoords(lat, lon) {
-  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
+  const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=en`
   const response = await axios.get(url);
   const data = response.data;
 
   return {
-    temp: Math.round(data.main.temp),
-    condition: data.weather[0].description,
-    humidity: data.main.humidity,
-    wind: data.wind.speed
+    temp: Math.round(data.current.temp),
+    condition: data.current.weather[0].main,
+    feelsLike: Math.round(data.current.feels_like),
+    tempMin: Math.round(data.daily[0].temp.min),
+    tempMax: Math.round(data.daily[0].temp.max),
+    humidity: data.current.humidity,
+    wind: data.current.wind_speed
   };
 }
 
 // 🔍 실시간 날씨 정보 가져오기
 async function getSeoulWeather() {
-  const url = `https://api.openweathermap.org/data/2.5/weather?q=Seoul&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
+  const url = `https://api.openweathermap.org/data/2.5/weather?q=Seoul&appid=${OPENWEATHER_API_KEY}&units=metric&lang=en`;
   const response = await axios.get(url);
   const data = response.data;
 
@@ -77,6 +80,20 @@ async function getSeoulWeather() {
     wind: data.wind.speed
   };
 }
+
+// 사용자의 위도/경도로 날씨 정보만 반환하는 API
+app.post('/weather', async (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  try {
+    const weather = await getWeatherByCoords(latitude, longitude); // 이미 정의된 함수 사용
+
+    res.json(weather); // ex: { temp: 24, condition: '맑음', humidity: 48, wind: 3.1 }
+  } catch (error) {
+    console.error('🌧️ 날씨 정보 가져오기 실패:', error.message);
+    res.status(500).json({ error: '날씨 정보를 불러오는 데 실패했습니다.' });
+  }
+});
 
 
 app.post('/gemini', async (req, res) => {
