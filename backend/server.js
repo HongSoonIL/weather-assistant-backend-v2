@@ -16,6 +16,7 @@ const PORT = 4000;
 const GEMINI_API_KEY = 'AIzaSyCTlo8oCxSpm6wqu87tpWP2J3jeZbryP6k';
 const OPENWEATHER_API_KEY = '81e4f6ae97b20ee022116a9ddae47b63'; // OpenWeather 키만 필요함
 
+
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -62,6 +63,7 @@ app.post('/gemini', async (req, res) => {
 const prompt = `
 ${dayLabel} "${location}"의 날씨 정보는 다음과 같습니다:
 - 기온: ${weather.temp}℃
+
 - 상태: ${weather.condition}
 - 습도: ${weather.humidity}%
 - 풍속: ${weather.wind}m/s
@@ -113,6 +115,7 @@ ${dayLabel} "${location}"의 날씨 정보는 다음과 같습니다:
 
 
     } catch (err) {
+
     console.error('❌ Gemini API 오류 발생!');
     console.error('↳ 메시지:', err.message);
     console.error('↳ 상태 코드:', err.response?.status);
