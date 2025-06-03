@@ -1,25 +1,17 @@
 const axios = require('axios');
+const GOOGLE_API_KEY = 'AIzaSyAP2585Er-J4_WcncTQ02F7ZuyyPAuxeFs';
 
-const KAKAO_API_KEY = 'ad730d57d614ed3fd525781250b82ab6'; // 또는 .env 사용
+async function geocodeGoogle(address) {
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+  const res = await axios.get(url);
+  const results = res.data.results;
 
-async function geocodeKakao(locationName) {
-  const res = await axios.get('https://dapi.kakao.com/v2/local/search/keyword.json', {
-    headers: {
-      Authorization: `KakaoAK ${KAKAO_API_KEY}` // ✅ 올바른 형식
-    },
-    params: {
-      query: locationName
-    }
-  });
+  if (!results || results.length === 0) return null;
 
-  const doc = res.data.documents?.[0];
-  if (!doc) return null;
-
-  return {
-    name: doc.place_name,
-    lat: doc.y,
-    lon: doc.x
-  };
+  const { lat, lng } = results[0].geometry.location;
+  return { lat, lon: lng };
 }
 
-module.exports = { geocodeKakao };
+module.exports = {
+  geocodeGoogle
+};

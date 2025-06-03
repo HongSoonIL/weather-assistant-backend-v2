@@ -1,61 +1,66 @@
 // require('dotenv').config();
-
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { geocodeKakao } = require('./locationUtils'); // ✅ 위치 유틸 불러오기
+const { geocodeGoogle } = require('./locationUtils'); // ✅ 위치 유틸 불러오기
+const conversationStore = require('./conversationStore');
+const { extractDateFromText, getNearestForecastTime } = require('./timeUtils');
+const { extractLocationFromText } = require('./placeExtractor');
+const { getWeather } = require('./weatherUtils');
 
 const app = express();
 const PORT = 4000;
 
 // ✅ 필수 API 키
-const GEMINI_API_KEY = 'AIzaSyAsxn4RLgLzEc8FuuEh9F5fo4JzQp9YjZo';
-const OPENWEATHER_API_KEY = 'd3270bfa237a5956cc0812005dbf181c'; // OpenWeather 키만 필요함
+const GEMINI_API_KEY = 'AIzaSyCTlo8oCxSpm6wqu87tpWP2J3jeZbryP6k';
+const OPENWEATHER_API_KEY = '81e4f6ae97b20ee022116a9ddae47b63'; // OpenWeather 키만 필요함
 
 app.use(cors());
 app.use(bodyParser.json());
 
-// ✅ 위경도 기반 날씨 정보 가져오기
-async function getWeather(lat, lon) {
-  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
-  const res = await axios.get(url);
-  const data = res.data;
-
-  return {
-    temp: Math.round(data.main.temp),
-    condition: data.weather[0].description,
-    humidity: data.main.humidity,
-    wind: data.wind.speed
-  };
-}
 
 app.post('/gemini', async (req, res) => {
   const { userInput } = req.body;
   console.log('💬 사용자 질문:', userInput);
+  const forecastDate = extractDateFromText(userInput);
+  const forecastKey = getNearestForecastTime(forecastDate);
+  console.log('🕒 추출된 날짜:', forecastDate);
+  console.log('📆 예보 키 (OpenWeather용):', forecastKey);
 
-  // ✅ 사용자 입력에서 지역명 추출 (예: "하남시", "제주도")
-  const match = userInput.match(/([가-힣]+(시|도|군|구|동|읍|면)?)/);
-  const region = match ? match[0] : null;
+  conversationStore.addUserMessage(userInput);
+  
+  // ✅ 장소 추출
+  const location = extractLocationFromText(userInput);
+  console.log('📍 추출된 장소:', location);
 
-  if (!region) {
+  if (!location) {
     return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
   }
 
   try {
-    const geo = await geocodeKakao(region);
+    const geo = await geocodeGoogle(location);
     if (!geo) {
-      return res.json({ reply: `죄송해요. "${region}" 지역의 위치를 찾을 수 없어요.` });
+      return res.json({ reply: `죄송해요. "${location}" 지역의 위치를 찾을 수 없어요.` });
     }
 
-    const weather = await getWeather(geo.lat, geo.lon);
+  const now = new Date();
+  const isToday = forecastDate.toDateString() === now.toDateString();
+  const keyForWeather = isToday ? null : forecastKey;
 
-    const today = new Date().toLocaleDateString('ko-KR', {
-      year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+  const weather = await getWeather(geo.lat, geo.lon, keyForWeather);
+
+  const dayLabel = isToday
+    ? '오늘'
+    : forecastDate.toLocaleDateString('ko-KR', {
+     year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
     });
 
-    const prompt = `
-오늘은 ${today}입니다. "${region}"의 날씨 정보는 다음과 같습니다:
+const prompt = `
+${dayLabel} "${location}"의 날씨 정보는 다음과 같습니다:
 - 기온: ${weather.temp}℃
 - 상태: ${weather.condition}
 - 습도: ${weather.humidity}%
@@ -64,16 +69,22 @@ app.post('/gemini', async (req, res) => {
 사용자에게 친근한 말투로 날씨를 요약하고, 실용적인 조언도 포함해 3~4문장으로 작성해주세요. 😊
 `;
 
+    // 🔹 전체 히스토리 + 최신 프롬프트로 구성
+    const contents = [...conversationStore.getHistory(), { role: 'user', parts: [{ text: prompt }] }];
+
     const result = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text: prompt }] }]
-      }
+      { contents }
     );
 
-    const raw = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '';    
+    const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
+
+    // 🔹 Gemini 응답 저장
+    conversationStore.addBotMessage(reply);
+    conversationStore.trimTo(10); // 최근 10개까지만 유지 (메모리 절약)
+
     // 1) 볼드 마크다운 제거
-    let formatted = raw.replace(/\*\*/g, '');
+    let formatted = reply.replace(/\*\*/g, '');
 
     // 2) “• ” 기준으로 분리하여 앞뒤 공백 제거
     const parts = formatted
