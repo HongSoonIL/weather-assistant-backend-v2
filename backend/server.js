@@ -1,54 +1,71 @@
-// require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { geocodeGoogle } = require('./locationUtils'); // ✅ 위치 유틸 불러오기
+
+// Module import
+const { geocodeGoogle, reverseGeocode } = require('./locationUtils');
+const { getWeather, getWeatherByCoords } = require('./weatherUtils');
 const conversationStore = require('./conversationStore');
 const { extractDateFromText, getNearestForecastTime } = require('./timeUtils');
 const { extractLocationFromText } = require('./placeExtractor');
-const { getWeather } = require('./weatherUtils');
 
 const app = express();
 const PORT = 4000;
 
 // ✅ 필수 API 키
-const GEMINI_API_KEY = 'AIzaSyCTlo8oCxSpm6wqu87tpWP2J3jeZbryP6k';
-const OPENWEATHER_API_KEY = '81e4f6ae97b20ee022116a9ddae47b63'; // OpenWeather 키만 필요함
+// 키 외부 노출을 막기 위해 배포 후 .env 파일로 분리할 수 있음.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 app.use(cors());
 app.use(bodyParser.json());
 
+// 실시간 위치
+// 1. 위도/경도로 지역명 반환
+app.post('/reverse-geocode', async (req, res) => {
+  const { latitude, longitude } = req.body;
+  try {
+    const region = await reverseGeocode(latitude, longitude);
+    res.json({ region });
+  } catch (err) {
+    console.error('📍 reverse-geocode 실패:', err.message);
+    res.status(500).json({ error: '주소 변환 실패' });
+  }
+});
+
+
+// 사용자의 위도/경도로 날씨 정보만 반환하는 API
+// 2. 위도/경도로 날씨 정보
+app.post('/weather', async (req, res) => {
+  const { latitude, longitude } = req.body;
+  try {
+    const weather = await getWeatherByCoords(latitude, longitude);
+    res.json(weather);
+  } catch (err) {
+    console.error('🌧️ 날씨 정보 가져오기 실패:', err.message);
+    res.status(500).json({ error: '날씨 정보를 불러오는 데 실패했습니다.' });
+  }
+});
+
+
 
 app.post('/gemini', async (req, res) => {
-  const { userInput } = req.body;
+  const { userInput, coords } = req.body;
   console.log('💬 사용자 질문:', userInput);
+
   const forecastDate = extractDateFromText(userInput);
   const forecastKey = getNearestForecastTime(forecastDate);
   console.log('🕒 추출된 날짜:', forecastDate);
   console.log('📆 예보 키 (OpenWeather용):', forecastKey);
 
   conversationStore.addUserMessage(userInput);
-  
-  // ✅ 장소 추출
-  const location = extractLocationFromText(userInput);
-  console.log('📍 추출된 장소:', location);
-
-  if (!location) {
-    return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
-  }
-
-  try {
-    const geo = await geocodeGoogle(location);
-    if (!geo) {
-      return res.json({ reply: `죄송해요. "${location}" 지역의 위치를 찾을 수 없어요.` });
-    }
 
   const now = new Date();
   const isToday = forecastDate.toDateString() === now.toDateString();
   const keyForWeather = isToday ? null : forecastKey;
-
-  const weather = await getWeather(geo.lat, geo.lon, keyForWeather);
 
   const dayLabel = isToday
     ? '오늘'
@@ -59,8 +76,41 @@ app.post('/gemini', async (req, res) => {
       weekday: 'long',
     });
 
+  
+  conversationStore.addUserMessage(userInput);
+
+  let lat, lon, locationName;
+
+  try {
+    if (coords) {
+      // 디바이스 위치 사용
+      lat = coords.latitude;
+      lon = coords.longitude;
+      locationName = await reverseGeocode(lat, lon); // 예: "Seoul, KR"
+    } else {
+      // 텍스트 기반 지역명 추출
+      const extractedLocation = extractLocationFromText(userInput);
+      console.log('📍 추출된 장소:', extractedLocation);
+
+      if (!extractedLocation) {
+        return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
+      }
+
+      const geo = await geocodeGoogle(extractedLocation);
+      if (!geo) {
+        return res.json({ reply: `죄송해요. "${extractedLocation}" 지역의 위치를 찾을 수 없어요.` });
+      }
+
+      lat = geo.lat;
+      lon = geo.lon;
+      locationName = extractedLocation;
+    }
+
+    // 날씨 정보 요청
+    const weather = await getWeather(lat, lon, keyForWeather);
+  
 const prompt = `
-${dayLabel} "${location}"의 날씨 정보는 다음과 같습니다:
+${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
 - 기온: ${weather.temp}℃
 - 상태: ${weather.condition}
 - 습도: ${weather.humidity}%
