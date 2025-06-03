@@ -1,179 +1,120 @@
 // require('dotenv').config();
-
 const express = require('express');
-const cors = require('cors');
 const axios = require('axios');
+const cors = require('cors');
 const bodyParser = require('body-parser');
+const { geocodeGoogle } = require('./locationUtils'); // ✅ 위치 유틸 불러오기
+const conversationStore = require('./conversationStore');
+const { extractDateFromText, getNearestForecastTime } = require('./timeUtils');
+const { extractLocationFromText } = require('./placeExtractor');
+const { getWeather } = require('./weatherUtils');
 
 const app = express();
 const PORT = 4000;
 
-// 키 외부 노출을 막기 위해 배포 후 .env 파일로 분리할 수 있음.
-const GEMINI_API_KEY = 'AIzaSyAsxn4RLgLzEc8FuuEh9F5fo4JzQp9YjZo';
-// const GEMINI_MODEL = process.env.GEMINI_MODEL;
-// const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const OPENWEATHER_API_KEY = '81e4f6ae97b20ee022116a9ddae47b63'; // 여기에_OpenWeather_API_키
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAiZGWeaxSGW5pHHl7DvlMFp80y_pnO1Fg' // GOOGLE_MAPS API: 위치 받아오기
+// ✅ 필수 API 키
+const GEMINI_API_KEY = 'AIzaSyCTlo8oCxSpm6wqu87tpWP2J3jeZbryP6k';
+const OPENWEATHER_API_KEY = '81e4f6ae97b20ee022116a9ddae47b63'; // OpenWeather 키만 필요함
 
 app.use(cors());
 app.use(bodyParser.json());
 
 
-// 실시간 위치
-app.post('/reverse-geocode', async (req, res) => {
-  const { latitude, longitude } = req.body;
-
-  try {
-    const response = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-      params: {
-        latlng: `${latitude},${longitude}`,
-        key: GOOGLE_MAPS_API_KEY,
-        language: 'en'
-      }
-    });
-
-    const components = response.data.results[0]?.address_components;
-
-    const city = components?.find(c =>
-      c.types.includes('locality') || c.types.includes('administrative_area_level_1')
-    )?.long_name;
-
-    const country = components?.find(c =>
-      c.types.includes('country')
-    )?.short_name;
-
-    const region = city && country ? `${city}, ${country}` : 'Unknown';
-    res.json({ region });
-  } catch (error) {
-    console.error('📍 Google Geocoding 실패:', error.message);
-    res.status(500).json({ error: '주소 변환 실패' });
-  }
-});
-
-// OpenWeather 불러오기
-async function getWeatherByCoords(lat, lon) {
-  const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=en`
-  const response = await axios.get(url);
-  const data = response.data;
-
-  return {
-    temp: Math.round(data.current.temp),
-    condition: data.current.weather[0].main,
-    feelsLike: Math.round(data.current.feels_like),
-    tempMin: Math.round(data.daily[0].temp.min),
-    tempMax: Math.round(data.daily[0].temp.max),
-    humidity: data.current.humidity,
-    wind: data.current.wind_speed
-  };
-}
-
-// 🔍 실시간 날씨 정보 가져오기
-async function getSeoulWeather() {
-  const url = `https://api.openweathermap.org/data/2.5/weather?q=Seoul&appid=${OPENWEATHER_API_KEY}&units=metric&lang=en`;
-  const response = await axios.get(url);
-  const data = response.data;
-
-  return {
-    temp: Math.round(data.main.temp),
-    condition: data.weather[0].description,
-    humidity: data.main.humidity,
-    wind: data.wind.speed
-  };
-}
-
-// 사용자의 위도/경도로 날씨 정보만 반환하는 API
-app.post('/weather', async (req, res) => {
-  const { latitude, longitude } = req.body;
-
-  try {
-    const weather = await getWeatherByCoords(latitude, longitude); // 이미 정의된 함수 사용
-
-    res.json(weather); // ex: { temp: 24, condition: '맑음', humidity: 48, wind: 3.1 }
-  } catch (error) {
-    console.error('🌧️ 날씨 정보 가져오기 실패:', error.message);
-    res.status(500).json({ error: '날씨 정보를 불러오는 데 실패했습니다.' });
-  }
-});
-
-
 app.post('/gemini', async (req, res) => {
   const { userInput } = req.body;
-  console.log('📩 POST /gemini 요청 수신됨');
   console.log('💬 사용자 질문:', userInput);
+  const forecastDate = extractDateFromText(userInput);
+  const forecastKey = getNearestForecastTime(forecastDate);
+  console.log('🕒 추출된 날짜:', forecastDate);
+  console.log('📆 예보 키 (OpenWeather용):', forecastKey);
+
+  conversationStore.addUserMessage(userInput);
+  
+  // ✅ 장소 추출
+  const location = extractLocationFromText(userInput);
+  console.log('📍 추출된 장소:', location);
+
+  if (!location) {
+    return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
+  }
 
   try {
-
-    // 사용자 위치를 저장하여 해당 위치 기반 날씨 출력
-    const { userInput, location, coords } = req.body;
-
-    if (userInput.includes('현재 위치') && userInput.includes('날씨') && coords) {
-      const weather = await getWeatherByCoords(coords.latitude, coords.longitude);
-
-      const prompt = `
-    사용자의 현재 위치는 ${location}입니다. (위도: ${coords.latitude}, 경도: ${coords.longitude})
-    다음은 실시간 날씨 정보입니다:
-    - 기온: ${weather.temp}도
-    - 상태: ${weather.condition}
-    - 습도: ${weather.humidity}%
-    - 풍속: ${weather.wind}m/s
-
-이 정보를 바탕으로 사용자에게 친근한 말투로 오늘 날씨 요약과 조언을 해주세요.
-답변은 3~4문장 이내로, 너무 길지 않게 써주세요. 문장 마지막에 이모지도 붙여주세요.
-    `;
-
-      const result = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          contents: [{ parts: [{ text: prompt }] }]
-        }
-      );
-
-      const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text;
-      return res.json({ reply });
+    const geo = await geocodeGoogle(location);
+    if (!geo) {
+      return res.json({ reply: `죄송해요. "${location}" 지역의 위치를 찾을 수 없어요.` });
     }
 
-    // ✅ 질문이 "서울 날씨"면 OpenWeather → Gemini로 연결
-    if (userInput.includes('서울') && userInput.includes('날씨')) {
-      const weather = await getSeoulWeather();
+  const now = new Date();
+  const isToday = forecastDate.toDateString() === now.toDateString();
+  const keyForWeather = isToday ? null : forecastKey;
 
-      const prompt = `
-사용자가 오늘 서울 날씨에 대해 물어봤습니다.
-현재 날씨 정보는 다음과 같습니다:
-- 기온: ${weather.temp}도
+  const weather = await getWeather(geo.lat, geo.lon, keyForWeather);
+
+  const dayLabel = isToday
+    ? '오늘'
+    : forecastDate.toLocaleDateString('ko-KR', {
+     year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
+    });
+
+const prompt = `
+${dayLabel} "${location}"의 날씨 정보는 다음과 같습니다:
+- 기온: ${weather.temp}℃
 - 상태: ${weather.condition}
 - 습도: ${weather.humidity}%
 - 풍속: ${weather.wind}m/s
 
-이 정보를 바탕으로 사용자에게 친근한 말투로 오늘 날씨 요약과 조언을 해주세요.
-답변은 3~4문장 이내로, 너무 길지 않게 써주세요. 문장 마지막에 이모지도 붙여주세요.
+사용자에게 친근한 말투로 날씨를 요약하고, 실용적인 조언도 포함해 3~4문장으로 작성해주세요. 😊
 `;
 
-      const result = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          contents: [{ parts: [{ text: prompt }] }]
-        }
-      );
+    // 🔹 전체 히스토리 + 최신 프롬프트로 구성
+    const contents = [...conversationStore.getHistory(), { role: 'user', parts: [{ text: prompt }] }];
 
-      const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text;
-      console.log('[🌤️ Gemini 날씨 응답]', reply);
-      return res.json({ reply });
-    }
-
-
-    // ✅ 일반 질문 → Gemini로 처리
     const result = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text: userInput }] }]
-      }
+      { contents }
     );
 
-    const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text;
-    res.json({ reply });
+    const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
 
-  } catch (err) {
+    // 🔹 Gemini 응답 저장
+    conversationStore.addBotMessage(reply);
+    conversationStore.trimTo(10); // 최근 10개까지만 유지 (메모리 절약)
+
+    // 1) 볼드 마크다운 제거
+    let formatted = reply.replace(/\*\*/g, '');
+
+    // 2) “• ” 기준으로 분리하여 앞뒤 공백 제거
+    const parts = formatted
+      .split('• ')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    // 3) 첫 줄(소개 문장)과 나머지 항목을 구분해서 재조합
+    const header = parts.shift();
+    const items = parts.map(p => `- ${p}`);
+
+    // 4) “오늘 예상 날씨:” 앞뒤로 빈 줄 추가
+    const idx = items.findIndex(p => p.startsWith('오늘 예상 날씨:'));
+    if (idx !== -1) {
+      items[idx] = `\n${items[idx]}`;
+    }
+
+    // 5) 최종 문자열 만들기
+    formatted = [
+      header,
+      ...items
+    ].join('\n');
+
+    // 6) 응답으로 보내기
+    res.json({ reply: formatted });
+
+
+    } catch (err) {
     console.error('❌ Gemini API 오류 발생!');
+    console.error('↳ 메시지:', err.message);
     console.error('↳ 상태 코드:', err.response?.status);
     console.error('↳ 상태 텍스트:', err.response?.statusText);
     console.error('↳ 응답 데이터:', JSON.stringify(err.response?.data, null, 2));
@@ -186,6 +127,7 @@ app.post('/gemini', async (req, res) => {
   }
 });
 
+
 app.listen(PORT, () => {
-  console.log(`✅ Gemini 백엔드 서버 실행 중: http://localhost:${PORT}`);
+  console.log(`✅ Gemini+Weather 서버 실행 중: http://localhost:${PORT}`);
 });
