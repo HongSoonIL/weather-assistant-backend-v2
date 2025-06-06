@@ -178,30 +178,32 @@ app.post('/gemini', async (req, res) => {
   // (B) 대화 기록 저장
   conversationStore.addUserMessage(userInput);
 
-  // (C) 위치 정보 결정
+  // (C) 위치 정보 결정 (★이 부분 수정)
   let lat, lon, locationName;
   try {
-    if (coords) {
-      lat = coords.latitude;
-      lon = coords.longitude;
-      locationName = await reverseGeocode(lat, lon);
-    } else {
-      const extractedLocation = extractLocationFromText(userInput);
-      console.log('📍 추출된 장소:', extractedLocation);
+    // 1. 입력 문장에서 지역명 추출
+    const extractedLocation = extractLocationFromText(userInput);
+    console.log('📍 추출된 장소:', extractedLocation);
 
-      if (!extractedLocation) {
-        return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
-      }
-
+    if (extractedLocation) {
+      // → 지역 키워드가 있으면 해당 지역 기준
       const geo = await geocodeGoogle(extractedLocation);
       if (!geo) {
         return res.json({ reply: `죄송해요. "${extractedLocation}" 지역의 위치를 찾을 수 없어요.` });
       }
-
       lat = geo.lat;
       lon = geo.lon;
       locationName = extractedLocation;
+    } else if (coords) {
+      // → 지역 키워드가 없고 coords가 있으면 현재 좌표 기준
+      lat = coords.latitude;
+      lon = coords.longitude;
+      locationName = await reverseGeocode(lat, lon);
+    } else {
+      // → 둘 다 없으면 안내
+      return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
     }
+
     console.log(`📍 "${locationName}" → lat: ${lat}, lon: ${lon}`);
   } catch (err) {
     console.error('❌ 지오코딩/역지오코딩 중 오류:', err);
