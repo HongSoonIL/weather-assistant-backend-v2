@@ -254,7 +254,6 @@ app.post('/gemini', async (req, res) => {
       if (!geo || !geo.lat || !geo.lon) {
         return res.json({ reply: `죄송해요. "${extractedLocation}" 지역의 위치를 찾을 수 없어요.` });
       }
-
       lat = geo.lat;
       lon = geo.lon;
       locationName = extractedLocation;
@@ -266,6 +265,7 @@ app.post('/gemini', async (req, res) => {
     } else {
       return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
     }
+
     console.log(`📍 "${locationName}" → lat: ${lat}, lon: ${lon}`);
   } catch (err) {
     console.error('❌ 지오코딩/역지오코딩 중 오류:', err);
