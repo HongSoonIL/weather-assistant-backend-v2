@@ -17,11 +17,11 @@ module.exports = {
     });
   },
 
-  trimTo: (count) => {
-    conversationHistory = conversationHistory.slice(-count);
-  },
-
   reset: () => {
     conversationHistory = [];
+  },
+
+  trimTo: (count) => {
+    conversationHistory = conversationHistory.slice(-count);
   }
 };
