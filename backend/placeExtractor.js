@@ -5,6 +5,7 @@ function extractLocationFromText(text) {
 
   const cleanText = text.replace(timePattern, '').trim();
 
+  //장소 아님
   const excluded = ['기온', '날씨', '온도', '습도', '바람', '하늘']; // 장소 아님
   
   // ✅ 주소 추출 패턴 (시/도/군/구/동/읍/면 단위까지)

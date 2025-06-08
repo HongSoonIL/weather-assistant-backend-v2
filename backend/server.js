@@ -124,17 +124,6 @@ async function getAirQuality(lat, lon) {
   }
 }
 
-function classifyPm25(pm25) {
-  if (pm25 <= 15) {
-    return { grade: '좋음',       advice: '좋은 공기입니다! 야외 활동에 무리 없어요 😊' };
-  } else if (pm25 <= 35) {
-    return { grade: '보통',       advice: '보통 수준입니다. 민감한 분들은 주의해주세요.' };
-  } else if (pm25 <= 75) {
-    return { grade: '나쁨',       advice: '나쁨 수준입니다. 마스크를 착용하고, 장시간 외출은 삼가세요.' };
-  } else {
-    return { grade: '매우 나쁨', advice: '매우 나쁨입니다! 외출을 최대한 자제하고, 실내 공기 관리에 신경 쓰세요.' };
-  }
-}
 // 실시간 위치
 // 1. 위도/경도로 지역명 반환
 app.post('/reverse-geocode', async (req, res) => {
@@ -277,63 +266,90 @@ app.post('/gemini', async (req, res) => {
     const pollenData = await getPollenAmbee(lat, lon);
     if (!pollenData) {
       return res.json({
-        reply:
-          '죄송해요. 꽃가루 정보를 가져오는 데 실패했어요.\n' +
-          '1) API 키가 유효한지  2) 위/경도(lat,lon)가 정확한지  3) Ambee 사용량 제한을 초과하지 않았는지 확인해주세요.'
+        reply: '죄송해요. 꽃가루 정보를 가져오는 데 실패했어요.'
       });
     }
 
-    // Ambee에서 리턴된 예시 데이터:
-    // { type: "grass_pollen", count: 27, risk: "Low", time: "2025-06-04T11:00:00.000Z" }
     const { type, count, risk, time } = pollenData;
-
-    // 사람이 보기 편하게 “잔디 꽃가루”“수목 꽃가루”“잡초 꽃가루”로 매핑
     const typeMap = {
       grass_pollen: '잔디 꽃가루',
       tree_pollen:  '수목 꽃가루',
       weed_pollen:  '잡초 꽃가루'
     };
     const friendlyType = typeMap[type] || type;
+    const timeStr = new Date(time).toLocaleString('ko-KR');
 
-    let replyText = `📌 현재 "${locationName}"의 꽃가루 정보입니다 (${friendlyType} 기준):\n`;
-    replyText += `- 입자 수: ${count}개\n`;
-    replyText += `- 위험도: ${risk}\n`;
-    replyText += `- 측정 시각: ${new Date(time).toLocaleString('ko-KR')} 기준\n\n`;
-    replyText += '알레르기가 있다면 마스크를 착용하시고, 실내 환기를 자주 해주세요! 🌸';
+    // **Gemini 프롬프트 생성**
+    const prompt = `
+아래는 "${locationName}"의 최신 꽃가루 정보입니다.
+- 종류: ${friendlyType}
+- 입자 수: ${count}개
+- 위험도: ${risk}
+- 측정 시각: ${timeStr}
 
-    return res.json({ reply: replyText });
+알레르기 환자, 민감한 사람 등에게 도움이 되도록 오늘 생활 팁, 건강 조언을 자연스럽고 친근하게 안내해 주세요. (3~4문장, 사용자가 이해하기 쉬운 형태)
+`;
+
+    const contents = [
+      ...conversationStore.getHistory(),
+      { role: 'user', parts: [{ text: prompt }] }
+    ];
+
+    // Gemini 호출
+    try {
+      const result = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        { contents }
+      );
+      const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
+      conversationStore.addBotMessage(reply);
+      conversationStore.trimTo(10);
+      res.json({ reply });
+    } catch (err) {
+      console.error('❌ Gemini 호출 오류:', err.message);
+      return res.json({ reply: '꽃가루 해석 결과 생성에 실패했어요.' });
+    }
+    return; // 분기 종료!
   }
 
   // (E) “미세먼지” 분기 → OpenWeather Air Pollution 호출 
   if (userInput.includes('미세먼지')) {
     const airData = await getAirQuality(lat, lon);
     if (!airData) {
-      return res.json({ reply: '죄송해요. 미세먼지 정보를 가져오는 데 실패했어요. 잠시 후 다시 시도해주세요.' });
+      return res.json({ reply: '죄송해요. 미세먼지 정보를 가져오는 데 실패했어요.' });
     }
     const { pm25, pm10 } = airData;
-    const { grade, advice } = classifyPm25(pm25);
 
-    const replyText =
-      `현재 "${locationName}"의 미세먼지 정보를 알려드릴게요:\n` +
-      `- PM2.5: ${pm25}㎍/m³ (${grade})\n` +
-      `- PM10: ${pm10}㎍/m³\n\n` +
-      `${advice}`;
+    const prompt = `
+아래는 "${locationName}"의 미세먼지(PM2.5/PM10) 정보입니다.
+- PM2.5: ${pm25}㎍/m³
+- PM10: ${pm10}㎍/m³
 
-    return res.json({ reply: replyText });
+사용자가 오늘 어떻게 대처해야 할지(외출, 마스크, 환기 등) 쉽고 친근하게 요약하고 조언을 포함해 주세요. (3~4문장, 실생활에 도움 되게)
+`;
+
+    const contents = [
+      ...conversationStore.getHistory(),
+      { role: 'user', parts: [{ text: prompt }] }
+    ];
+
+    try {
+      const result = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        { contents }
+      );
+      const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
+      conversationStore.addBotMessage(reply);
+      conversationStore.trimTo(10);
+      res.json({ reply });
+    } catch (err) {
+      console.error('❌ Gemini 호출 오류:', err.message);
+      return res.json({ reply: '미세먼지 해석 결과 생성에 실패했어요.' });
+    }
+    return;
   }
 
   // (F) “꽃가루” / “미세먼지” 키워드가 없는 경우 → 현재 날씨 조회 + Gemini 요약
-  const now = new Date();
-  const isToday = forecastDate.toDateString() === now.toDateString();
-  const dayLabel = isToday
-    ? '오늘'
-    : forecastDate.toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'long'
-      });
-
   try {
     // ★ 수정: getWeather를 현재 날씨만 가져오는 함수로 교체
     const weatherData = await getWeather(lat, lon);
