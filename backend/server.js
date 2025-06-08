@@ -4,6 +4,12 @@ const axios = require('axios');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
+// 서버 시작 시 API 키 확인 (테스트)
+console.log('=== API 키 상태 확인 ===');
+console.log('Gemini API 키:', process.env.GEMINI_API_KEY ? '있음' : '없음');
+console.log('OpenWeather API 키:', process.env.OPENWEATHER_API_KEY ? '있음' : '없음');
+
+
 // Module import
 const { geocodeGoogle, reverseGeocode } = require('./locationUtils');
 const { getWeather, getWeatherByCoords } = require('./weatherUtils');
@@ -419,6 +425,7 @@ ${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
     return res.status(err.response?.status || 500).json({
       error: 'Gemini API 호출 실패',
       message: err.response?.data?.error?.message || err.message
+      
     });
   }
 });
@@ -427,3 +434,4 @@ ${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
 app.listen(PORT, () => {
   console.log(`✅ Gemini+Weather 서버 실행 중: http://localhost:${PORT}`);
 });
+
