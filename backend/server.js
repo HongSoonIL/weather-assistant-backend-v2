@@ -221,20 +221,6 @@ app.post('/gemini', async (req, res) => {
 
   conversationStore.addUserMessage(userInput);
 
-  const now = new Date();
-  const isToday = forecastDate.toDateString() === now.toDateString();
-  const keyForWeather = isToday ? null : forecastKey;
-
-  // 함수로 빼면 재사용 가능할 것 같습니다.
-  const dayLabel = isToday
-    ? '오늘'
-    : forecastDate.toLocaleDateString('ko-KR', {
-     year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-    });
-
   let lat, lon, locationName;
   try {
     if (extractedLocation) {
