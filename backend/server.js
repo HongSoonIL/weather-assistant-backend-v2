@@ -151,6 +151,57 @@ app.post('/weather', async (req, res) => {
   }
 });
 
+// 3. 특정 시간 기온 변화 그래프 출력용
+app.post('/weather-graph', async (req, res) => {
+  const { latitude, longitude } = req.body;
+  try {
+    const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${latitude}&lon=${longitude}&exclude=minutely,daily,alerts&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
+    const result = await axios.get(url);
+    const data = result.data; // 한 번에 hourly + timezone_offset 사용
+
+    const hourly = data.hourly;
+    const timezoneOffsetSec = data.timezone_offset || 0;
+    const offsetMs = timezoneOffsetSec * 1000;
+
+    // 1. 현재 UTC 시각
+    const utcNow = new Date();  // 무조건 UTC
+
+    // 2. 해당 지역 현지 기준 시각을 계산
+    const localNow = new Date(utcNow.getTime() + offsetMs);
+    localNow.setMinutes(0, 0, 0); // 분, 초 제거 → 정각으로
+
+    const hourlyTemps = [];
+
+    for (let i = 0; i < 6; i++) {
+      // 3. 3시간 간격 target UTC 시각 생성
+      const targetLocalTime = new Date(localNow.getTime() + i * 3 * 60 * 60 * 1000);
+      const targetUTC = new Date(targetLocalTime.getTime() - offsetMs);
+      // 4. UTC 기준에서 가장 가까운 hourly 데이터 찾기
+      const closest = hourly.reduce((prev, curr) => {
+        const currTime = curr.dt * 1000;
+        return Math.abs(currTime - targetUTC.getTime()) < Math.abs(prev.dt * 1000 - targetUTC.getTime()) ? curr : prev;
+      });
+
+      // 5. label은 현지 시간 기준
+      const localTime = new Date(targetUTC.getTime() + offsetMs);
+      const hour = new Date(targetUTC.getTime() + offsetMs).getUTCHours();
+      const label = `${hour % 12 === 0 ? 12 : hour % 12}${hour < 12 ? 'am' : 'pm'}`;
+      console.log(`✅ label=${label} | local=${localTime.toISOString()} | UTC=${targetUTC.toISOString()} | temp=${Math.round(closest.temp)}`);
+
+      hourlyTemps.push({
+        hour: label,
+        temp: Math.round(closest.temp)
+      });
+    }
+
+        res.json({ hourlyTemps });
+        console.log('📡 최종 hourlyTemps:', hourlyTemps);
+
+      } catch (err) {
+        console.error('📊 시간별 기온 그래프용 API 실패:', err.message);
+        res.status(500).json({ error: '그래프용 날씨 데이터를 불러오는 데 실패했습니다.' });
+      }
+    });
 
 app.post('/gemini', async (req, res) => {
   const { userInput, coords } = req.body;
@@ -163,32 +214,29 @@ app.post('/gemini', async (req, res) => {
   console.log('🕒 추출된 날짜:', forecastDate);
   console.log('📆 예보 키 (OpenWeather용):', forecastKey);
 
-  // (B) 대화 기록 저장
+  // 1. 사용자 입력에서 지역명 추출
+  const extractedLocation = extractLocationFromText(userInput);
+  console.log('📍 추출된 장소:', extractedLocation);
+
   conversationStore.addUserMessage(userInput);
 
-  // (C) 위치 정보 결정 (★이 부분 수정)
   let lat, lon, locationName;
   try {
-    // 1. 입력 문장에서 지역명 추출
-    const extractedLocation = extractLocationFromText(userInput);
-    console.log('📍 추출된 장소:', extractedLocation);
-
     if (extractedLocation) {
-      // → 지역 키워드가 있으면 해당 지역 기준
+      // 지역명이 명확히 있으면 geocode 사용 (GPS보다 우선)
       const geo = await geocodeGoogle(extractedLocation);
-      if (!geo) {
+      if (!geo || !geo.lat || !geo.lon) {
         return res.json({ reply: `죄송해요. "${extractedLocation}" 지역의 위치를 찾을 수 없어요.` });
       }
       lat = geo.lat;
       lon = geo.lon;
       locationName = extractedLocation;
     } else if (coords) {
-      // → 지역 키워드가 없고 coords가 있으면 현재 좌표 기준
+      // 지역명 없으면 그때만 GPS 사용
       lat = coords.latitude;
       lon = coords.longitude;
       locationName = await reverseGeocode(lat, lon);
     } else {
-      // → 둘 다 없으면 안내
       return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
     }
 
@@ -203,17 +251,11 @@ app.post('/gemini', async (req, res) => {
     const pollenData = await getPollenAmbee(lat, lon);
     if (!pollenData) {
       return res.json({
-        reply:
-          '죄송해요. 꽃가루 정보를 가져오는 데 실패했어요.\n' +
-          '1) API 키가 유효한지  2) 위/경도(lat,lon)가 정확한지  3) Ambee 사용량 제한을 초과하지 않았는지 확인해주세요.'
+        reply: '죄송해요. 꽃가루 정보를 가져오는 데 실패했어요.'
       });
     }
 
-    // Ambee에서 리턴된 예시 데이터:
-    // { type: "grass_pollen", count: 27, risk: "Low", time: "2025-06-04T11:00:00.000Z" }
     const { type, count, risk, time } = pollenData;
-
-    // 사람이 보기 편하게 “잔디 꽃가루”“수목 꽃가루”“잡초 꽃가루”로 매핑
     const typeMap = {
       grass_pollen: '잔디 꽃가루',
       tree_pollen:  '수목 꽃가루',
@@ -293,17 +335,6 @@ app.post('/gemini', async (req, res) => {
   }
 
   // (F) “꽃가루” / “미세먼지” 키워드가 없는 경우 → 현재 날씨 조회 + Gemini 요약
-  const now = new Date();
-  const isToday = forecastDate.toDateString() === now.toDateString();
-  const dayLabel = isToday
-    ? '오늘'
-    : forecastDate.toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'long'
-      });
-
   try {
     // ★ 수정: getWeather를 현재 날씨만 가져오는 함수로 교체
     const weatherData = await getWeather(lat, lon);
@@ -361,8 +392,11 @@ ${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
     ].join('\n');
 
     // 6) 응답으로 보내기
-    res.json({ reply: formatted });
-
+    res.json({
+      reply: formatted,
+      resolvedCoords: { lat, lon },
+      locationName
+    });
 
     } catch (err) {
     console.error('❌ Gemini API 오류 발생!');
