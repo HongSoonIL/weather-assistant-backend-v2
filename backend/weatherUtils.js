@@ -11,12 +11,9 @@ async function getWeather(lat, lon, forecastTime = null) {
   if (!forecastTime) {
     target = data.current;
   } else {
-    const nearest = data.hourly.reduce((prev, curr) => {
-      const diffPrev = Math.abs(prev.dt * 1000 - forecastTime);
-      const diffCurr = Math.abs(curr.dt * 1000 - forecastTime);
-      return diffCurr < diffPrev ? curr : prev;
-    });
-    target = nearest;
+    target = data.hourly.reduce((prev, curr) =>
+      Math.abs(curr.dt * 1000 - forecastTime) < Math.abs(prev.dt * 1000 - forecastTime) ? curr : prev
+    );
   }
 
   return {
@@ -51,8 +48,11 @@ async function getWeatherByCoords(lat, lon) {
     humidity: data.current.humidity,
     wind: data.current.wind_speed,
 
+     // 아이콘 매핑을 위한 정보 추가
     weatherId: data.current.weather[0].id,  // 아이콘 매핑을 위해 추가
-    description: data.current.weather[0].description // 날씨 문구 출력을 위해 추가
+    description: data.current.weather[0].description, // 날씨 문구 출력을 위해 추가
+    timestamp: data.current.dt * 1000,  // 밤/낮 판단용
+    icon: data.current.weather[0].icon   // OpenWeather 원본 아이콘 코드
   };
 }
 
