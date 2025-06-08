@@ -11,9 +11,12 @@ async function getWeather(lat, lon, forecastTime = null) {
   if (!forecastTime) {
     target = data.current;
   } else {
-    target = data.hourly.reduce((prev, curr) =>
-      Math.abs(curr.dt * 1000 - forecastTime) < Math.abs(prev.dt * 1000 - forecastTime) ? curr : prev
-    );
+    const nearest = data.hourly.reduce((prev, curr) => {
+      const diffPrev = Math.abs(prev.dt * 1000 - forecastTime);
+      const diffCurr = Math.abs(curr.dt * 1000 - forecastTime);
+      return diffCurr < diffPrev ? curr : prev;
+    });
+    target = nearest;
   }
 
   return {
