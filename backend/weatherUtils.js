@@ -35,6 +35,9 @@ async function getWeatherByCoords(lat, lon) {
   const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=en`;
   const response = await axios.get(url);
   const data = response.data;
+  
+
+
 
   return {
     temp: Math.round(data.current.temp),
@@ -43,7 +46,10 @@ async function getWeatherByCoords(lat, lon) {
     tempMin: Math.round(data.daily[0].temp.min),
     tempMax: Math.round(data.daily[0].temp.max),
     humidity: data.current.humidity,
-    wind: data.current.wind_speed
+    wind: data.current.wind_speed,
+
+    weatherId: data.current.weather[0].id,  // 아이콘 매핑을 위해 추가
+    description: data.current.weather[0].description // 날씨 문구 출력을 위해 추가
   };
 }
 
