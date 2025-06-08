@@ -335,6 +335,16 @@ app.post('/gemini', async (req, res) => {
   }
 
   // (F) “꽃가루” / “미세먼지” 키워드가 없는 경우 → 현재 날씨 조회 + Gemini 요약
+  const now = new Date();
+  const isToday = forecastDate.toDateString() === now.toDateString();
+  const dayLabel = isToday
+  ? '오늘'
+  : forecastDate.toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long'
+    });
   try {
     // ★ 수정: getWeather를 현재 날씨만 가져오는 함수로 교체
     const weatherData = await getWeather(lat, lon);
