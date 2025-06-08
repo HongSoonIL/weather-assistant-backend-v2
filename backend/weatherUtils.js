@@ -20,7 +20,6 @@ async function getWeather(lat, lon, forecastTime = null) {
     temp: Math.round(target.temp),
     feelsLike: Math.round(target.feels_like),
     condition: target.weather?.[0]?.description || '정보 없음',
-    icon: target.weather?.[0]?.icon || '',
     humidity: target.humidity,
     uvi: target.uvi,
     cloud: target.clouds,
@@ -52,7 +51,6 @@ async function getWeatherByCoords(lat, lon) {
     weatherId: data.current.weather[0].id,  // 아이콘 매핑을 위해 추가
     description: data.current.weather[0].description, // 날씨 문구 출력을 위해 추가
     timestamp: data.current.dt * 1000,  // 밤/낮 판단용
-    icon: data.current.weather[0].icon   // OpenWeather 원본 아이콘 코드
   };
 }
 
