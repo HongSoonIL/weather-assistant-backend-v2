@@ -30,6 +30,113 @@ const AMBEE_POLLEN_API_KEY = process.env.AMBEE_POLLEN_API_KEY;
 app.use(cors());
 app.use(bodyParser.json());
 
+
+//  채팅 제목 자동 생성 API
+app.post('/generate-title', async (req, res) => {
+  const { userInput } = req.body;
+  
+  try {
+    const prompt = `
+Generate a concise English title for this weather-related conversation based on the user's question.
+
+Rules:
+- Maximum 4 words
+- Use title case (First Letter Capitalized)
+- No emojis or special characters
+- Focus on the main topic (weather, location, condition)
+- Be specific and descriptive
+
+User question: "${userInput}"
+
+Examples:
+"What's the weather like today?" → "Today’s Weather"
+"오늘 날씨 어때?" → "Today’s Weather"
+"오늘 서울 날씨 어때?" → "Seoul Weather Today"
+"내일 부산 비 올까?" → "Busan Rain Tomorrow"
+"미세먼지 농도 궁금해" → "Air Quality Check"
+"꽃가루 알레르기 조심해야 할까?" → "Pollen Allergy Alert"
+"이번주 날씨 어떨까?" → "Weekly Weather Forecast"
+"습도가 높아?" → "Humidity Levels"
+
+Title:`;
+
+    const result = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }]
+          }
+        ]
+      }
+    );
+
+    let title = result.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'New Weather Chat';
+    
+    // "Title:" 접두사 제거 및 정리
+    title = title.replace(/^Title:\s*/i, '').trim();
+    title = title.replace(/[""]/g, ''); // 따옴표 제거
+    
+    // 4단어 초과시 자르기
+    const words = title.split(' ');
+    if (words.length > 4) {
+      title = words.slice(0, 4).join(' ');
+    }
+    
+    console.log('🏷️ 생성된 제목:', title);
+    res.json({ title });
+    
+  } catch (err) {
+    console.error('❌ 제목 생성 실패:', err.message);
+    
+    // 폴백: 키워드 기반 영어 제목 생성
+    const fallbackTitle = generateEnglishFallbackTitle(userInput);
+    res.json({ title: fallbackTitle });
+  }
+});
+
+// 폴백 영어 제목 생성 함수 (한국어 + 영어 지원)
+function generateEnglishFallbackTitle(input) {
+  const patterns = [
+    { keywords: ['날씨', 'weather', '기온', '온도', 'temperature'], title: 'Weather Inquiry' },
+    { keywords: ['미세먼지', 'pm2.5', 'pm10', 'air quality', 'pollution'], title: 'Air Quality Check' },
+    { keywords: ['꽃가루', '알레르기', 'pollen', 'allergy'], title: 'Pollen Alert' },
+    { keywords: ['비', '폭우', 'rain', 'shower', 'precipitation'], title: 'Rain Forecast' },
+    { keywords: ['눈', '폭설', 'snow', 'snowfall'], title: 'Snow Forecast' },
+    { keywords: ['태풍', '바람', 'wind', 'typhoon', 'storm'], title: 'Wind Weather' },
+    { keywords: ['습도', 'humidity', 'moisture'], title: 'Humidity Check' },
+    { keywords: ['내일', 'tomorrow'], title: 'Tomorrow Weather' },
+    { keywords: ['오늘', 'today'], title: 'Today Weather' },
+    { keywords: ['이번주', 'week', 'weekly'], title: 'Weekly Forecast' }
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.keywords.some(keyword => input.includes(keyword))) {
+      return pattern.title;
+    }
+  }
+
+  // 지역명 추출 시도
+  const cityMap = {
+    '서울': 'Seoul Weather',
+    '부산': 'Busan Weather', 
+    '대구': 'Daegu Weather',
+    '인천': 'Incheon Weather',
+    '광주': 'Gwangju Weather',
+    '대전': 'Daejeon Weather',
+    '울산': 'Ulsan Weather'
+  };
+  
+  for (const [korean, english] of Object.entries(cityMap)) {
+    if (input.includes(korean)) {
+      return english;
+    }
+  }
+
+  return 'Weather Chat';
+}
+
 // … (getPollenAmbee, getAirQuality, classifyPm25, /reverse-geocode, /weather 엔드포인트 등은 그대로) …
 
 // Ambee Pollen API 호출 함수 (응답 구조에 맞춰 수정됨)
