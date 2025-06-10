@@ -26,7 +26,11 @@ async function getWeather(lat, lon, forecastTime = null) {
     dewPoint: target.dew_point,
     visibility: target.visibility,
     wind: target.wind_speed,
-    windDeg: target.wind_deg
+    windDeg: target.wind_deg,
+    pop: target.pop ?? null,
+    rain: target.rain?.['1h'] ?? 0,
+    sunrise: data.current.sunrise,
+    sunset: data.current.sunset,
   };
 }
 
