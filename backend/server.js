@@ -16,6 +16,7 @@ const { getWeather, getWeatherByCoords } = require('./weatherUtils');
 const conversationStore = require('./conversationStore');
 const { extractDateFromText, getNearestForecastTime } = require('./timeUtils');
 const { extractLocationFromText } = require('./placeExtractor');
+const weatherAdvice = require('./weatherAdviceRouter');
 
 const app = express();
 const PORT = 4000;
@@ -358,6 +359,56 @@ app.post('/gemini', async (req, res) => {
     console.error('❌ 지오코딩/역지오코딩 중 오류:', err);
     return res.json({ reply: '위치 정보를 가져오는 중 오류가 발생했어요.' });
   }
+//우산, 옷차림, 공기질 등등에 대한 답변 이끌어 내는 코드. weatherAdviceRouter.js에서 실행
+// 공기질 + 꽃가루
+if (weatherAdvice.isAirQualityRelated(userInput)) {
+  return await weatherAdvice.handleAirAdvice({ lat, lon, locationName }, res);
+}
+
+// 우산
+if (weatherAdvice.isUmbrellaRelated(userInput)) {
+  return await weatherAdvice.handleUmbrellaAdvice({ lat, lon, locationName }, res);
+}
+
+// 옷차림
+if (weatherAdvice.isClothingRelated(userInput)) {
+  return await weatherAdvice.handleClothingAdvice({ lat, lon, locationName }, res);
+}
+
+// 습도
+if (weatherAdvice.isHumidityRelated(userInput)) {
+  return await weatherAdvice.handleHumidityAdvice({ lat, lon, locationName }, res);
+}
+
+// 가시거리
+if (weatherAdvice.isVisibilityRelated(userInput)) {
+  return await weatherAdvice.handleVisibilityAdvice({ lat, lon, locationName }, res);
+}
+
+// 일출/일몰
+if (weatherAdvice.isSunTimeRelated(userInput)) {
+  return await weatherAdvice.handleSunTimeAdvice({ lat, lon, locationName }, res);
+}
+
+// 자외선
+if (weatherAdvice.isUVRelated(userInput)) {
+  return await weatherAdvice.handleUVAdvice({ lat, lon, locationName }, res);
+}
+
+// 바람
+if (weatherAdvice.isWindRelated(userInput)) {
+  return await weatherAdvice.handleWindAdvice({ lat, lon, locationName }, res);
+}
+
+// 구름량
+if (weatherAdvice.isCloudRelated(userInput)) {
+  return await weatherAdvice.handleCloudAdvice({ lat, lon, locationName }, res);
+}
+
+// 이슬점
+if (weatherAdvice.isDewPointRelated(userInput)) {
+  return await weatherAdvice.handleDewPointAdvice({ lat, lon, locationName }, res);
+}
 
   // (D) “꽃가루” 분기 → Ambee 호출 
   if (userInput.includes('꽃가루')) {
