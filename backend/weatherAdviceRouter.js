@@ -51,7 +51,13 @@ ${parts.join('\n')}
     const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
     conversationStore.addBotMessage(reply);
     conversationStore.trimTo(10);
-    res.json({ reply });
+    res.json({ 
+      reply,
+    airQuality: {
+    pm25: air?.pm25,
+    pm10: air?.pm10
+    } 
+  });
   } catch (e) {
     console.error('❌ Gemini 호출 오류 (공기질/꽃가루):', e.message);
     res.json({ reply: '공기질 및 꽃가루에 대한 조언 생성에 실패했어요.' });
