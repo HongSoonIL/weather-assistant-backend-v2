@@ -5,45 +5,29 @@ const conversationStore = require('./conversationStore');
 const axios = require('axios');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-//공기 질문 답변
-function isAirQualityRelated(text) {
-  const keywords = ['미세먼지', '공기', '공기질', '초미세먼지', '황사', '먼지', '숨쉬기', '꽃가루', 'air', 'quality'];
+
+function isAirRelated(text) {
+  const keywords = ['미세먼지', '공기', '공기질', '초미세먼지', '황사', '먼지', '숨쉬기', 'air', 'quality'];
   return keywords.some(kw => text.includes(kw));
 }
 
 async function handleAirAdvice({ lat, lon, locationName }, res) {
   const air = await getAirQuality(lat, lon);
-  const pollen = await getPollenAmbee(lat, lon);
   
-  try {
-
-  if (!air && !pollen) {
-    return res.json({ reply: '죄송해요. 공기질과 꽃가루 정보를 불러오지 못했어요.' });
+  if (!air) {
+    return res.json({ reply: '죄송해요. 미세먼지 정보를 불러오지 못했어요.' });
   }
-
-  const parts = [];
-  if (air) {
-    parts.push(`- PM2.5: ${air.pm25}㎍/m³\n- PM10: ${air.pm10}㎍/m³`);
-  }
-  if (pollen) {
-    const typeMap = {
-      grass_pollen: '잔디 꽃가루',
-      tree_pollen: '수목 꽃가루',
-      weed_pollen: '잡초 꽃가루'
-    };
-    const type = typeMap[pollen.type] || pollen.type;
-    const timeStr = new Date(pollen.time).toLocaleString('ko-KR');
-    parts.push(`- 꽃가루 (${type}): ${pollen.count}개 (${pollen.risk} 위험) / 측정 시각: ${timeStr}`);
-  }
-
+  
   const prompt = `
-"${locationName}"의 공기질 및 꽃가루 정보는 다음과 같습니다:
-${parts.join('\n')}
-
-이 정보를 바탕으로 오늘 외출 시 주의할 점이나 마스크 착용, 알레르기 대비 등 실용적인 조언을 3~4문장으로 자연스럽고 친근하게 안내해 주세요.
-`;
-
+  "${locationName}"의 미세먼지(PM2.5/PM10) 정보는 다음과 같습니다:
+  - PM2.5: ${air.pm25}㎍/m³
+  - PM10: ${air.pm10}㎍/m³
+  
+  이 정보를 바탕으로 외출 시 주의할 점이나 마스크 착용 등에 대해 3~4문장으로 자연스럽게 조언해 주세요.
+  `;
+  
   const contents = [...conversationStore.getHistory(), { role: 'user', parts: [{ text: prompt }] }];
+  try {
     const result = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
       { contents }
@@ -52,17 +36,63 @@ ${parts.join('\n')}
     conversationStore.addBotMessage(reply);
     conversationStore.trimTo(10);
     res.json({ 
-      reply,
-    airQuality: {
-    pm25: air?.pm25,
-    pm10: air?.pm10
-    } 
-  });
-  } catch (e) {
-    console.error('❌ Gemini 호출 오류 (공기질/꽃가루):', e.message);
-    res.json({ reply: '공기질 및 꽃가루에 대한 조언 생성에 실패했어요.' });
+          reply,
+        airQuality: {
+        pm25: air?.pm25,
+        pm10: air?.pm10
+        } 
+  });  } catch (e) {
+    console.error('❌ Gemini 호출 오류 (미세먼지):', e.message);
+    res.json({ reply: '미세먼지에 대한 조언 생성에 실패했어요.' });
   }
 }
+
+function isPollenRelated(text) {
+  const keywords = ['꽃가루', '알레르기', 'pollen'];
+  return keywords.some(kw => text.includes(kw));
+}
+
+async function handlePollenAdvice({ lat, lon, locationName }, res) {
+  const pollen = await getPollenAmbee(lat, lon);
+  
+  if (!pollen) {
+    return res.json({ reply: '죄송해요. 꽃가루 정보를 불러오지 못했어요.' });
+  }
+
+  const typeMap = {
+    grass_pollen: '잔디 꽃가루',
+    tree_pollen: '수목 꽃가루',
+    weed_pollen: '잡초 꽃가루'
+  };
+  const type = typeMap[pollen.type] || pollen.type;
+  const timeStr = new Date(pollen.time).toLocaleString('ko-KR');
+
+  const prompt = `
+"${locationName}"의 꽃가루 정보는 다음과 같습니다:
+- 종류: ${type}
+- 개수: ${pollen.count}개
+- 위험도: ${pollen.risk}
+- 측정 시각: ${timeStr}
+
+이 정보를 참고해 알레르기, 외출, 마스크 착용 등에 대해 3~4문장으로 친근하게 조언해 주세요.
+`;
+
+  const contents = [...conversationStore.getHistory(), { role: 'user', parts: [{ text: prompt }] }];
+  try {
+    const result = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      { contents }
+    );
+    const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
+    conversationStore.addBotMessage(reply);
+    conversationStore.trimTo(10);
+    res.json({ reply });
+  } catch (e) {
+    console.error('❌ Gemini 호출 오류 (꽃가루):', e.message);
+    res.json({ reply: '꽃가루에 대한 조언 생성에 실패했어요.' });
+  }
+}
+
 
 //우산에 대한 답변
 function isUmbrellaRelated(text) {
@@ -454,7 +484,8 @@ ${feeling}
 
 module.exports = {
   // 인식 함수
-  isAirQualityRelated,
+  isAirRelated,
+  isPollenRelated,
   isUmbrellaRelated,
   isClothingRelated,
   isHumidityRelated,
@@ -467,6 +498,7 @@ module.exports = {
 
   // 처리 함수
   handleAirAdvice,
+  handlePollenAdvice,
   handleUmbrellaAdvice,
   handleClothingAdvice,
   handleHumidityAdvice,
