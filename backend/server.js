@@ -360,9 +360,14 @@ app.post('/gemini', async (req, res) => {
     return res.json({ reply: '위치 정보를 가져오는 중 오류가 발생했어요.' });
   }
 //우산, 옷차림, 공기질 등등에 대한 답변 이끌어 내는 코드. weatherAdviceRouter.js에서 실행
-// 공기질 + 꽃가루
-if (weatherAdvice.isAirQualityRelated(userInput)) {
+// 공기질
+if (weatherAdvice.isAirRelated(userInput)) {
   return await weatherAdvice.handleAirAdvice({ lat, lon, locationName }, res);
+}
+
+// 꽃가루
+if (weatherAdvice.isPollenRelated(userInput)) {
+  return await weatherAdvice.handlePollenAdvice({ lat, lon, locationName }, res);
 }
 
 // 우산
