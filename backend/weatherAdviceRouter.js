@@ -14,6 +14,8 @@ function isAirQualityRelated(text) {
 async function handleAirAdvice({ lat, lon, locationName }, res) {
   const air = await getAirQuality(lat, lon);
   const pollen = await getPollenAmbee(lat, lon);
+  
+  try {
 
   if (!air && !pollen) {
     return res.json({ reply: '죄송해요. 공기질과 꽃가루 정보를 불러오지 못했어요.' });
@@ -42,8 +44,6 @@ ${parts.join('\n')}
 `;
 
   const contents = [...conversationStore.getHistory(), { role: 'user', parts: [{ text: prompt }] }];
-
-  try {
     const result = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
       { contents }
@@ -66,7 +66,7 @@ ${parts.join('\n')}
 
 //우산에 대한 답변
 function isUmbrellaRelated(text) {
-  const keywords = ['우산', '비', '비올까', '소나기', '강수확률', 'rain', 'umbrella'];
+  const keywords = ['우산', '비', '비올까', '소나기', '강수확률', 'rain', 'umbrella', '강수량', '강수'];
   return keywords.some(kw => text.includes(kw));
 }
 
