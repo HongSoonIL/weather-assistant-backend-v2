@@ -11,6 +11,7 @@ console.log('OpenWeather API 키:', process.env.OPENWEATHER_API_KEY ? '있음' :
 
 
 // Module import
+const { getUserProfile } = require('./userProfileUtils');
 const { geocodeGoogle, reverseGeocode } = require('./locationUtils');
 const { getWeather, getWeatherByCoords } = require('./weatherUtils');
 const conversationStore = require('./conversationStore');
@@ -334,8 +335,9 @@ app.post('/gemini', async (req, res) => {
 
   conversationStore.addUserMessage(userInput);
 
-  let lat, lon, locationName;
+  let lat, lon, locationName, uid;
   try {
+    uid = req.body.uid || null;//프론트에서 uid 가져오는 코드
     if (extractedLocation) {
       // 지역명이 명확히 있으면 geocode 사용 (GPS보다 우선)
       const geo = await geocodeGoogle(extractedLocation);
@@ -362,57 +364,57 @@ app.post('/gemini', async (req, res) => {
 //우산, 옷차림, 공기질 등등에 대한 답변 이끌어 내는 코드. weatherAdviceRouter.js에서 실행
 // 공기질
 if (weatherAdvice.isAirRelated(userInput)) {
-  return await weatherAdvice.handleAirAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleAirAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 꽃가루
 if (weatherAdvice.isPollenRelated(userInput)) {
-  return await weatherAdvice.handlePollenAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handlePollenAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 우산
 if (weatherAdvice.isUmbrellaRelated(userInput)) {
-  return await weatherAdvice.handleUmbrellaAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleUmbrellaAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 옷차림
 if (weatherAdvice.isClothingRelated(userInput)) {
-  return await weatherAdvice.handleClothingAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleClothingAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 습도
 if (weatherAdvice.isHumidityRelated(userInput)) {
-  return await weatherAdvice.handleHumidityAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleHumidityAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 가시거리
 if (weatherAdvice.isVisibilityRelated(userInput)) {
-  return await weatherAdvice.handleVisibilityAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleVisibilityAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 일출/일몰
 if (weatherAdvice.isSunTimeRelated(userInput)) {
-  return await weatherAdvice.handleSunTimeAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleSunTimeAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 자외선
 if (weatherAdvice.isUVRelated(userInput)) {
-  return await weatherAdvice.handleUVAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleUVAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 바람
 if (weatherAdvice.isWindRelated(userInput)) {
-  return await weatherAdvice.handleWindAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleWindAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 구름량
 if (weatherAdvice.isCloudRelated(userInput)) {
-  return await weatherAdvice.handleCloudAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleCloudAdvice({ lat, lon, locationName, uid }, res);
 }
 
 // 이슬점
 if (weatherAdvice.isDewPointRelated(userInput)) {
-  return await weatherAdvice.handleDewPointAdvice({ lat, lon, locationName }, res);
+  return await weatherAdvice.handleDewPointAdvice({ lat, lon, locationName, uid }, res);
 }
 
   // (F) “꽃가루” / “미세먼지” 키워드가 없는 경우 → 현재 날씨 조회 + Gemini 요약
@@ -428,12 +430,21 @@ if (weatherAdvice.isDewPointRelated(userInput)) {
     });
   try {
     // ★ 수정: getWeather를 현재 날씨만 가져오는 함수로 교체
-    const weatherData = await getWeather(lat, lon);
+    const weatherData = await getWeather(lat, lon, uid);
     if (!weatherData) {
       return res.json({ reply: '죄송해요. 현재 날씨 정보를 가져오지 못했어요.' });
     }
 
-    const prompt = `
+  // 사용자 정보 포맷 구성
+  const userInfo = await getUserProfile(uid);
+  const userText = userInfo ? `
+사용자 정보:
+- 이름: ${userInfo.name}
+- 민감 요소: ${userInfo.sensitiveFactors?.join(', ') || '없음'}
+- 취미: ${userInfo.hobbies?.join(', ') || '없음'}
+` : '';
+  const prompt = `
+${userText}
 ${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
 - 기온: ${weatherData.temp}℃
 - 상태: ${weatherData.condition}
