@@ -335,8 +335,9 @@ app.post('/gemini', async (req, res) => {
 
   conversationStore.addUserMessage(userInput);
 
-  let lat, lon, locationName;
+  let lat, lon, locationName, uid;
   try {
+    uid = req.body.uid || null;//프론트에서 uid 가져오는 코드
     if (extractedLocation) {
       // 지역명이 명확히 있으면 geocode 사용 (GPS보다 우선)
       const geo = await geocodeGoogle(extractedLocation);
@@ -429,12 +430,21 @@ if (weatherAdvice.isDewPointRelated(userInput)) {
     });
   try {
     // ★ 수정: getWeather를 현재 날씨만 가져오는 함수로 교체
-    const weatherData = await getWeather(lat, lon);
+    const weatherData = await getWeather(lat, lon, uid);
     if (!weatherData) {
       return res.json({ reply: '죄송해요. 현재 날씨 정보를 가져오지 못했어요.' });
     }
 
-    const prompt = `
+  // 사용자 정보 포맷 구성
+  const userInfo = await getUserProfile(uid);
+  const userText = userInfo ? `
+사용자 정보:
+- 이름: ${userInfo.name}
+- 민감 요소: ${userInfo.sensitiveFactors?.join(', ') || '없음'}
+- 취미: ${userInfo.hobbies?.join(', ') || '없음'}
+` : '';
+  const prompt = `
+${userText}
 ${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
 - 기온: ${weatherData.temp}℃
 - 상태: ${weatherData.condition}
