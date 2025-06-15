@@ -143,78 +143,79 @@ app.post('/chat', async (req, res) => {
     const { userInput, coords, uid } = req.body;
     console.log(`💬 사용자 질문 (UID: ${uid}):`, userInput);
     conversationStore.addUserMessage(userInput);
+
     try {
-      // 1. [1차 Gemini 호출] 결과 전체를 변수에 저장
+      // 1. 도구 선택
       const toolSelectionResponse = await callGeminiForToolSelection(userInput, availableTools);
-      const functionCalls = toolSelectionResponse.candidates?.[0]?.content?.parts.filter(p => p.functionCall).map(p => p.functionCall);
-      let toolOutputs = [];
-      // Gemini가 함수를 사용하라고 했을 때만 실행
-        if (functionCalls && functionCalls.length > 0) {
-          console.log('🛠️ Gemini가 선택한 도구:', functionCalls.map(call => call.name).join(', '));
-          const executionPromises = functionCalls.map(call => executeTool(call, coords));
-          const results = await Promise.allSettled(executionPromises);
-          toolOutputs = results.filter(r => r.status === 'fulfilled').map(r => r.value);
-          results.filter(r => r.status === 'rejected').forEach(r => console.error('❗️ 도구 실행 실패:', r.reason));
-          console.log('📊 도구 실행 성공 결과:', toolOutputs);
-        } else {
-          console.log('🤔 특정 도구가 필요하지 않은 일반 대화입니다.');
+      let functionCalls = toolSelectionResponse.candidates?.[0]?.content?.parts
+        .filter(p => p.functionCall)
+        .map(p => p.functionCall);
+
+      functionCalls = functionCalls.map(call => ({
+        ...call,
+        args: {
+          ...call.args,
+          user_input: userInput
         }
+      }));
 
+      if (!functionCalls || functionCalls.length === 0) {
+        throw new Error('도구 선택이 이루어지지 않았습니다.');
+      }
+
+      // 2. 도구 실행
+      const executionPromises = functionCalls.map(call => executeTool(call, coords));
+      const results = await Promise.allSettled(executionPromises);
+      const toolOutputs = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+      results.filter(r => r.status === 'rejected').forEach(r => console.error('❌ 도구 실행 실패:', r.reason));
+
+      // 3. 사용자 프로필 가져오기
       const userProfile = await getUserProfile(uid);
-      if (userProfile) console.log(`👤 ${uid} 님의 프로필을 찾았습니다.`);
+      if (userProfile) console.log(`👤 사용자 프로필:`, userProfile);
 
-      // 2. [2차 Gemini 호출] 1차 호출 결과(toolSelectionResponse)를 함께 전달
+      // 4. 최종 Gemini 응답 생성
       const finalResponse = await callGeminiForFinalResponse(
-          userInput, 
-          toolSelectionResponse,
-          toolOutputs, 
-          userProfile
+        userInput,
+        toolSelectionResponse,
+        toolOutputs,
+        userProfile,
+        functionCalls // 반드시 넘겨야 오류 없음
       );
-      const reply = finalResponse.candidates?.[0]?.content?.parts?.[0]?.text || '죄송해요, 답변을 생성하는 데 문제가 발생했어요.';
-      
+
+      const reply = finalResponse.candidates?.[0]?.content?.parts?.[0]?.text || '죄송해요, 답변 생성에 실패했어요.';
       console.log('🤖 최종 생성 답변:', reply);
       // LLM의 답변 텍스트가 아닌, '실행된 도구'를 기준으로 데이터를 첨부합니다.
       const responsePayload = { reply };
 
-        // 그래프/미세먼지 데이터 첨부 로직을 '판단'이 아닌 '존재' 여부로 변경합니다.
-        const allData = toolOutputs?.[0]?.output;
-        if ((userInput.includes('기온') || userInput.includes('온도')) && allData?.weather?.hourly) {
-          const hourlyTemps = [];
-          const hourly = allData.weather.hourly;
-          const offsetMs = (allData.weather.timezone_offset || 0) * 1000;
-          const localNow = new Date(new Date().getTime() + offsetMs);
-          localNow.setMinutes(0, 0, 0);
-  
-          for (let i = 0; i < 6; i++) {
-              const targetLocalTime = new Date(localNow.getTime() + i * 3 * 60 * 60 * 1000);
-              const targetUTC = new Date(targetLocalTime.getTime() - offsetMs);
-              const closest = hourly.reduce((prev, curr) =>
-                  Math.abs(curr.dt * 1000 - targetUTC.getTime()) < Math.abs(prev.dt * 1000 - targetUTC.getTime()) ? curr : prev
-              );
-              const hour = new Date(targetUTC.getTime() + offsetMs).getUTCHours();
-              const label = `${hour % 12 === 0 ? 12 : hour % 12}${hour < 12 ? 'am' : 'pm'}`;
-              hourlyTemps.push({ hour: label, temp: Math.round(closest.temp) });
-          }
-          responsePayload.graph = hourlyTemps;
-          console.log('📈 기온 질문으로 판단하여 그래프 데이터를 포함합니다.');
-        }
+      // ✅ 5. 사용자 질문에 따른 조건 분기
+      const fullWeather = toolOutputs.find(o => o.tool_function_name === 'get_full_weather_with_context');
+      const lowerInput = userInput.toLowerCase();
 
-          // 미세먼지 데이터가 있는지 확인
-        if (allData.air?.pm2_5) {
-            const pm25 = allData.air.pm2_5;
-            const getAirLevel = v => { if (v <= 15) return 'Good'; if (v <= 35) return 'Moderate'; if (v <= 75) return 'Poor'; return 'Very Poor'; };
-            responsePayload.dust = { value: pm25, level: getAirLevel(pm25) };
+      // 그래프 조건 (기온/온도/그래프 등)
+      if (lowerInput.includes('기온') || lowerInput.includes('온도') || lowerInput.includes('그래프')) {
+        if (fullWeather?.output?.hourlyTemps?.length > 0) {
+          responsePayload.graph = fullWeather.output.hourlyTemps;
         }
+      }
 
-        conversationStore.addBotMessage(reply);
+      // 미세먼지 조건
+      if (lowerInput.includes('미세먼지') || lowerInput.includes('먼지') || lowerInput.includes('공기')) {
+        if (fullWeather?.output?.air?.pm25 !== undefined) {
+          const pm25 = fullWeather.output.air.pm25;
+          const getAirLevel = v => v <= 15 ? 'Good' : v <= 35 ? 'Moderate' : v <= 75 ? 'Poor' : 'Very Poor';
+          responsePayload.dust = {
+            value: pm25,
+            level: getAirLevel(pm25)
+          };
+        }
+      }
+
         res.json(responsePayload);
-
       } catch (err) {
-        console.error('❌ /chat 엔드포인트 처리 중 심각한 오류 발생:', err.response ? JSON.stringify(err.response.data) : err.message);
-        res.status(500).json({ error: '요청 처리 중 서버에서 오류가 발생했습니다.' });
-    }
+        console.error('❌ /chat 처리 오류:', err.response ? JSON.stringify(err.response.data) : err.message);
+        res.status(500).json({ error: '요청 처리 중 오류가 발생했습니다.' });
+      }
 });
-
 // 실시간 위치
 // 1. 위도/경도로 지역명 반환
 app.post('/reverse-geocode', async (req, res) => {
