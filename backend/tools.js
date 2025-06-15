@@ -24,29 +24,34 @@ const availableTools = {
         parameters: {
             type: 'OBJECT',
             properties: {
-            location: { type: 'STRING', description: '날씨를 조회할 지역 이름 (예: "서울"). 사용자가 "여기", "현재 위치"라고 말하면 "CURRENT_LOCATION" 문자열을 사용하세요.' },
-            date: { type: 'STRING', description: '조회할 날짜. 지정하지 않으면 오늘 날씨를 반환합니다.' }
+            location: { 
+                type: 'STRING', 
+                description: "날씨를 조회할 지역 이름. 만약 사용자의 이번 질문에 지역 이름이 (예: '서울', '부산' 등 과 같이) 명시적으로 언급되지 않았다면, 이 값을 현재 위치인'CURRENT_LOCATION'으로 설정하세요. 사용자가 '여기' 또는 '현재 위치'라고 말할 때도 'CURRENT_LOCATION'을 사용합니다." 
             },
-        required: ['location'],
-      },
+            date: { 
+                type: 'STRING', 
+                description: '조회할 날짜. 지정하지 않으면 오늘 날씨를 반환합니다.' 
+            },
+            graph_needed: {
+                type: 'BOOLEAN',
+                description: "사용자가 '기온', '온도' 또는 시간별 날씨 변화에 대해 명시적으로 질문했을 경우에만 true로 설정합니다. 그 외의 경우에는 false로 설정하세요."
+            }
+        },
+        required: ['location', 'graph_needed'],
+        },
     },
-    // {
-    //   name: 'show_temperature_graph',
-    //   description: "사용자가 '기온', '온도' 또는 시간별 날씨 변화에 대해 구체적으로 물어봤을 때, 답변과 함께 시간별 기온 그래프를 표시하라는 신호를 보냅니다. 이 함수는 데이터를 가져오지 않으며, 오직 그래프 표시 신호용으로만 사용됩니다.",
-    //   parameters: {
-    //     type: 'OBJECT',
-    //     properties: {}, // 이 도구는 별도의 파라미터가 필요 없습니다.
-    //   },
-    // },
     {
         name: 'get_air_quality',
         description: "특정 지역의 공기질, 즉 미세먼지(pm10)와 초미세먼지(pm2.5) 농도를 조회합니다. '미세먼지', '공기질', '공기 상태' 등의 질문에 사용합니다.",
         parameters: {
             type: 'OBJECT',
             properties: {
-            location: { type: 'STRING', description: '공기질을 조회할 지역 이름 (예: "성남시")' },
+            location: { 
+                type: 'STRING', 
+                description: "날씨를 조회할 지역 이름 (예: '서울', '부산' 등). 만약 사용자의 이번 질문에 지역 이름이 (예: '서울', '부산' 등 과 같이) 명시적으로 언급되지 않았다면, 이 값을 현재 위치인 'CURRENT_LOCATION'으로 설정하세요. 사용자가 '여기' 또는 '현재 위치'라고 말할 때도 'CURRENT_LOCATION'을 사용합니다." 
             },
-            required: ['location'],
+        },
+        required: ['location'],
         },
     },
     {
@@ -55,12 +60,15 @@ const availableTools = {
         parameters: {
             type: 'OBJECT',
             properties: {
-            location: { type: 'STRING', description: '꽃가루 정보를 조회할 지역 이름 (예: "분당구")' },
+            location: { 
+                type: 'STRING', 
+                description: "날씨를 조회할 지역 이름 (예: '서울', '부산' 등). 만약 사용자의 이번 질문에 지역 이름이 (예: '서울', '부산' 등 과 같이) 명시적으로 언급되지 않았다면, 이 값을 현재 위치인 'CURRENT_LOCATION'으로 설정하세요. 사용자가 '여기' 또는 '현재 위치'라고 말할 때도 'CURRENT_LOCATION'을 사용합니다." 
             },
-            required: ['location'],
-      },
+        },
+        required: ['location'],
+        },
     },
-  ],
+    ],
 };
 
 // ==================================================================
@@ -70,13 +78,6 @@ async function executeTool(functionCall, userCoords) {
     const { name, args } = functionCall;
     
     let output;
-
-    // show_temperature_graph는 위치 정보 없이도 실행됩니다.
-    if (name === 'show_temperature_graph') {
-        // 이 도구는 신호용이므로, 특별한 작업 없이 성공했다는 표시만 반환합니다.
-        output = { signal: 'show_graph' };
-        return { tool_function_name: name, output };
-    }
 
     // 위치 인자(location)를 실제 좌표(lat, lon)로 변환하는 과정이 공통적으로 필요합니다.
     let lat, lon, locationName;

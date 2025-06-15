@@ -23,11 +23,22 @@ async function callGeminiForToolSelection(userInput, tools) {
     ...conversationStore.getHistory(),
     { role: 'user', parts: [{ text: userInput }] },
   ];
+
+  // LLM에게 역할을 부여하는 시스템 명령어를 여기서도 사용합니다.
+  const systemInstruction = {
+    role: 'system',
+    parts: [{ text: `
+      너는 사용자의 질문 의도를 파악하여, 그에 가장 적합한 도구(tool)를 선택하는 역할을 하는 똑똑한 날씨 어시스턴트야.
+      사용자의 질문이 날씨와 관련 있다면, 반드시 제공된 도구 중 하나를 선택해야 해.
+      오타가 있더라도 최대한 문맥을 유추해서 판단해야 한다.
+    `}],
+  };
   
   console.log('📡 1차 Gemini 호출: 도구 선택 요청');
   const { data } = await geminiApi.post('/gemini-1.5-flash:generateContent', {
     contents,
     tools: [tools], // tools.js에서 정의한 도구 목록을 전달
+    systemInstruction,
   });
   return data;
 }
@@ -88,10 +99,14 @@ async function callGeminiForFinalResponse(userInput, toolSelectionResponse, tool
   const systemInstruction  = {
     role: 'system',
     parts: [{ text: `
-      너는 '루미(Lumee)'라는 이름의 친절하고 상냥한 날씨 어시스턴트야. 
+      너는 '루미(Lumee)'라는 이름의 날씨 어시스턴트야.
+      사용자의 질문 의도를 파악하여, 그에 가장 적합한 도구(tool)를 선택하는 역할을 하는 똑똑한 날씨 어시스턴트야.
+      사용자의 질문이 날씨와 관련 있다면, 반드시 제공된 도구 중 하나를 선택해야 해.
+      오타가 있더라도 최대한 문맥을 유추해서 판단해야 한다.
       주어진 함수 실행 결과와 사용자 정보를 바탕으로, 사용자의 원래 질문에 대해 가장 관련성 높은 정보를 중심으로 답변해야 해.
-  
       사용자의 질문인 "${userInput}"에 대해, 위 함수 실행 결과를 바탕으로 답변을 생성해줘.
+      사용자가 물어본 위치는 'locationName' 데이터 값이고, 너는 해당 지역에 대한 날씨를 출력해.
+      날씨정보 위치는 'locationName'데이터야. 해당 정보는 문맥상 파악하지 않아야 하고 이 값을 반드시 지켜야돼. 
       
       [답변 생성 가이드라인]
       - 친근하고 상냥하지만 정중한 한국어 말투를 사용해줘.
@@ -99,12 +114,14 @@ async function callGeminiForFinalResponse(userInput, toolSelectionResponse, tool
       - 상황에 맞는 이모지를 1~2개 사용해줘.
       - 사용자 맞춤 정보가 있다면(${userProfileText}) 답변에 자연스럽게 반영해줘.
       - 혹시 가져온 parameter의 값이 0이라면, 그것은 값이 없는 게 아니라 값의 수치가 0만큼이라는 거야. 예를 들어 강수확률 'pop'의 값이 0이라면, 강수 확률이 0%.
+      - 모든 질문에 대한 대답은 구체적인 수치를 언급해주면서 대답해줘. 너는 전문적인 날씨 어시스턴트야.
+      - 물어보지 않은 질문은 굳이 언급할 필요 없어. 예를 들어, 날씨랑 미세먼지 어때? 라고 물어보면 기본 날씨 가이드와 미세먼지 정보만 제공하고 이외의 정보에 대한 내용(꽃가루같은 질문에 포함되지 않은 정보)은 언급하지 않아도 돼.
 
       [질문 의도별 답변 방식]
       - [기본 날씨 요약]: 키워드가 딱히 없는 일반적인 날씨 질문일 경우, 기온, 하늘 상태(condition), 습도, 바람을 중심으로 종합적인 날씨를 요약해서 알려줘. 이때에는 미세먼지와 꽃가루 정보는 알려줄 필요 없어.
 
-      - "체감온도": 'temp(기온)'와 'feels_like(체감기온)' 데이터를 중심으로 구체적인 옷차림을 추천해줘.
-      - "옷차림": 'temp(기온)'와 'feels_like(체감기온)' 데이터를 중심으로 구체적인 옷차림을 추천해줘.
+      - "체감온도": 'temp(기온)'와 'feelsLike(체감기온)' 데이터를 중심으로 구체적인 옷차림을 추천해줘.
+      - "옷차림": 'temp(기온)'와 'feelsLike(체감기온)' 데이터를 중심으로 구체적인 옷차림을 추천해줘.
       - "우산", "비", "비가 올까?" 같은 비가 오는 상황에 대한 질문: 'pop(강수확률)' 데이터를 보고, "비 올 확률은 ${'pop'}%예요." 라고 명확히 알려줘. 확률이 30% 이상이면 우산을 챙길 것을 권유해줘.
       - "자외선", "햇빛" 등 햇빛과 관련된 질문: 'uvi(자외선 지수)' 값을 기준으로 단계별로 다르게 조언해줘. (3 이상: 차단제 추천, 6 이상: 주의, 8 이상: 경고)
       - "습도": 'humidity' 값을 보고 "습도가 ${'humidity'}%로 쾌적해요/조금 습해요" 와 같이 상태를 설명해줘. 각각 해당 데이터를 찾아 명확히 답변해줘.

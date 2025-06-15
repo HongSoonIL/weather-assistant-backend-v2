@@ -173,16 +173,20 @@ app.post('/chat', async (req, res) => {
       const reply = finalResponse.candidates?.[0]?.content?.parts?.[0]?.text || '죄송해요, 답변을 생성하는 데 문제가 발생했어요.';
       
       console.log('🤖 최종 생성 답변:', reply);
-      // ✨ [핵심 수정] LLM의 답변 텍스트가 아닌, '실행된 도구'를 기준으로 데이터를 첨부합니다.
+      // LLM의 답변 텍스트가 아닌, '실행된 도구'를 기준으로 데이터를 첨부합니다.
       const responsePayload = { reply };
 
-      // 1. 'get_general_weather' 도구가 실행되었다면, 그래프 데이터를 첨부합니다.
-      const weatherToolOutput = toolOutputs.find(o => o.tool_function_name === 'get_general_weather');
-      if (weatherToolOutput?.output?.hourlyTemps?.length > 0) {
-          responsePayload.graph = weatherToolOutput.output.hourlyTemps;
-          console.log('📈 날씨 도구 실행됨. 응답에 그래프 데이터를 포함합니다.');
+      // ✨ [핵심 수정] LLM이 호출한 함수의 '인자(args)'를 직접 확인합니다.
+      const weatherFunctionCall = functionCalls?.find(call => call.name === 'get_general_weather');
+      
+      // graph_needed 파라미터가 true로 설정되었을 때만 그래프 데이터를 포함시킵니다.
+      if (weatherFunctionCall?.args?.graph_needed === true) {
+          const weatherToolOutput = toolOutputs.find(o => o.tool_function_name === 'get_general_weather');
+          if (weatherToolOutput?.output?.hourlyTemps?.length > 0) {
+              responsePayload.graph = weatherToolOutput.output.hourlyTemps;
+              console.log('📈 LLM이 그래프가 필요하다고 판단하여 데이터를 포함합니다.');
+          }
       }
-
 
       // get_air_quality 도구 결과에서 미세먼지 데이터를 찾습니다.
       const airToolOutput = toolOutputs.find(o => o.tool_function_name === 'get_air_quality');

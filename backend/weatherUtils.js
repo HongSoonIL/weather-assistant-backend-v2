@@ -6,7 +6,7 @@ async function getWeather(lat, lon) {
 }
 
 async function getWeatherByCoords(lat, lon) {
-  const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,alerts&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
+  const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,alerts&appid=${OPENWEATHER_API_KEY}&units=metric&lang=en`;
   
   try {
     const res = await axios.get(url);
@@ -17,12 +17,12 @@ async function getWeatherByCoords(lat, lon) {
 
     return {
       temp: Math.round(current.temp),
-      feels_like: Math.round(current.feels_like),
-      temp_max: Math.round(daily.temp.max),
-      temp_min: Math.round(daily.temp.min),
+      feelsLike: Math.round(current.feels_like),
+      tempMax: Math.round(daily.temp.max),
+      tempMin: Math.round(daily.temp.min),
       humidity: current.humidity,
       wind: current.wind_speed,
-      condition: current.weather[0].description,
+      description: current.weather[0].description,
       weatherId: current.weather[0].id,
       icon: current.weather[0].icon,
       uvi: current.uvi,
@@ -33,7 +33,6 @@ async function getWeatherByCoords(lat, lon) {
       sunset: new Date(current.sunset * 1000).toLocaleTimeString('ko-KR'),
       pop: hourly[0]?.pop !== undefined ? Math.round(hourly[0].pop * 100) : 0, // 앞으로 1시간 내 강수 확률 (%)
       rain_1h: current.rain?.['1h'] || hourly[0]?.rain?.['1h'] || 0, // 1시간 예상 강수량 (mm)
-      
       hourly: res.data.hourly,
       timezone_offset: res.data.timezone_offset,
     };
