@@ -163,7 +163,7 @@ app.post('/chat', async (req, res) => {
       const userProfile = await getUserProfile(uid);
       if (userProfile) console.log(`👤 ${uid} 님의 프로필을 찾았습니다.`);
 
-      // 2. [2차 Gemini 호출] ✨ 1차 호출 결과(toolSelectionResponse)를 함께 전달
+      // 2. [2차 Gemini 호출] 1차 호출 결과(toolSelectionResponse)를 함께 전달
       const finalResponse = await callGeminiForFinalResponse(
           userInput, 
           toolSelectionResponse,
@@ -176,30 +176,40 @@ app.post('/chat', async (req, res) => {
       // LLM의 답변 텍스트가 아닌, '실행된 도구'를 기준으로 데이터를 첨부합니다.
       const responsePayload = { reply };
 
-      // ✨ [핵심 수정] LLM이 호출한 함수의 '인자(args)'를 직접 확인합니다.
-      const weatherFunctionCall = functionCalls?.find(call => call.name === 'get_general_weather');
-      
-      // graph_needed 파라미터가 true로 설정되었을 때만 그래프 데이터를 포함시킵니다.
-      if (weatherFunctionCall?.args?.graph_needed === true) {
-          const weatherToolOutput = toolOutputs.find(o => o.tool_function_name === 'get_general_weather');
-          if (weatherToolOutput?.output?.hourlyTemps?.length > 0) {
-              responsePayload.graph = weatherToolOutput.output.hourlyTemps;
-              console.log('📈 LLM이 그래프가 필요하다고 판단하여 데이터를 포함합니다.');
+        // 그래프/미세먼지 데이터 첨부 로직을 '판단'이 아닌 '존재' 여부로 변경합니다.
+        const allData = toolOutputs?.[0]?.output;
+        if ((userInput.includes('기온') || userInput.includes('온도')) && allData?.weather?.hourly) {
+          const hourlyTemps = [];
+          const hourly = allData.weather.hourly;
+          const offsetMs = (allData.weather.timezone_offset || 0) * 1000;
+          const localNow = new Date(new Date().getTime() + offsetMs);
+          localNow.setMinutes(0, 0, 0);
+  
+          for (let i = 0; i < 6; i++) {
+              const targetLocalTime = new Date(localNow.getTime() + i * 3 * 60 * 60 * 1000);
+              const targetUTC = new Date(targetLocalTime.getTime() - offsetMs);
+              const closest = hourly.reduce((prev, curr) =>
+                  Math.abs(curr.dt * 1000 - targetUTC.getTime()) < Math.abs(prev.dt * 1000 - targetUTC.getTime()) ? curr : prev
+              );
+              const hour = new Date(targetUTC.getTime() + offsetMs).getUTCHours();
+              const label = `${hour % 12 === 0 ? 12 : hour % 12}${hour < 12 ? 'am' : 'pm'}`;
+              hourlyTemps.push({ hour: label, temp: Math.round(closest.temp) });
           }
-      }
+          responsePayload.graph = hourlyTemps;
+          console.log('📈 기온 질문으로 판단하여 그래프 데이터를 포함합니다.');
+        }
 
-      // get_air_quality 도구 결과에서 미세먼지 데이터를 찾습니다.
-      const airToolOutput = toolOutputs.find(o => o.tool_function_name === 'get_air_quality');
-      if (airToolOutput?.output?.air) {
-          const pm25 = airToolOutput.output.air.pm25;
-          // 프론트엔드가 필요로 하는 형식으로 가공
-          const getAirLevel = v => { if (v <= 15) return 'Good'; if (v <= 35) return 'Moderate'; if (v <= 75) return 'Poor'; return 'Very Poor'; };
-          responsePayload.dust = { value: pm25, level: getAirLevel(pm25) };
-          console.log('😷 응답에 미세먼지 데이터를 포함합니다.');
-      }
-      
-      res.json(responsePayload);
-    } catch (err) {
+          // 미세먼지 데이터가 있는지 확인
+        if (allData.air?.pm2_5) {
+            const pm25 = allData.air.pm2_5;
+            const getAirLevel = v => { if (v <= 15) return 'Good'; if (v <= 35) return 'Moderate'; if (v <= 75) return 'Poor'; return 'Very Poor'; };
+            responsePayload.dust = { value: pm25, level: getAirLevel(pm25) };
+        }
+
+        conversationStore.addBotMessage(reply);
+        res.json(responsePayload);
+
+      } catch (err) {
         console.error('❌ /chat 엔드포인트 처리 중 심각한 오류 발생:', err.response ? JSON.stringify(err.response.data) : err.message);
         res.status(500).json({ error: '요청 처리 중 서버에서 오류가 발생했습니다.' });
     }
@@ -283,204 +293,6 @@ app.post('/weather-graph', async (req, res) => {
         res.status(500).json({ error: '그래프용 날씨 데이터를 불러오는 데 실패했습니다.' });
       }
     });
-
-// app.post('/gemini', async (req, res) => {
-//   const { userInput, coords } = req.body;
-//   console.log('💬 사용자 질문:', userInput);
-
-//   // (A) 날짜/시간 추출 (필요 시)
-//   const forecastDate = extractDateFromText(userInput);
-//   const forecastKey  = getNearestForecastTime(forecastDate);
-
-//   console.log('🕒 추출된 날짜:', forecastDate);
-//   console.log('📆 예보 키 (OpenWeather용):', forecastKey);
-
-//   // 1. 사용자 입력에서 지역명 추출
-//   const extractedLocation = extractLocationFromText(userInput);
-//   console.log('📍 추출된 장소:', extractedLocation);
-
-//   conversationStore.addUserMessage(userInput);
-
-//   let lat, lon, locationName, uid;
-//   try {
-//     uid = req.body.uid || null;//프론트에서 uid 가져오는 코드
-//     if (extractedLocation) {
-//       // 지역명이 명확히 있으면 geocode 사용 (GPS보다 우선)
-//       const geo = await geocodeGoogle(extractedLocation);
-//       if (!geo || !geo.lat || !geo.lon) {
-//         return res.json({ reply: `죄송해요. "${extractedLocation}" 지역의 위치를 찾을 수 없어요.` });
-//       }
-//       lat = geo.lat;
-//       lon = geo.lon;
-//       locationName = extractedLocation;
-//     } else if (coords) {
-//       // 지역명 없으면 그때만 GPS 사용
-//       lat = coords.latitude;
-//       lon = coords.longitude;
-//       locationName = await reverseGeocode(lat, lon);
-//     } else {
-//       return res.json({ reply: '어느 지역의 날씨를 알려드릴까요?' });
-//     }
-
-//     console.log(`📍 "${locationName}" → lat: ${lat}, lon: ${lon}`);
-//   } catch (err) {
-//     console.error('❌ 지오코딩/역지오코딩 중 오류:', err);
-//     return res.json({ reply: '위치 정보를 가져오는 중 오류가 발생했어요.' });
-//   }
-// //우산, 옷차림, 공기질 등등에 대한 답변 이끌어 내는 코드. weatherAdviceRouter.js에서 실행
-// // 공기질
-// if (weatherAdvice.isAirRelated(userInput)) {
-//   return await weatherAdvice.handleAirAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 꽃가루
-// if (weatherAdvice.isPollenRelated(userInput)) {
-//   return await weatherAdvice.handlePollenAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 우산
-// if (weatherAdvice.isUmbrellaRelated(userInput)) {
-//   return await weatherAdvice.handleUmbrellaAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 옷차림
-// if (weatherAdvice.isClothingRelated(userInput)) {
-//   return await weatherAdvice.handleClothingAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 습도
-// if (weatherAdvice.isHumidityRelated(userInput)) {
-//   return await weatherAdvice.handleHumidityAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 가시거리
-// if (weatherAdvice.isVisibilityRelated(userInput)) {
-//   return await weatherAdvice.handleVisibilityAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 일출/일몰
-// if (weatherAdvice.isSunTimeRelated(userInput)) {
-//   return await weatherAdvice.handleSunTimeAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 자외선
-// if (weatherAdvice.isUVRelated(userInput)) {
-//   return await weatherAdvice.handleUVAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 바람
-// if (weatherAdvice.isWindRelated(userInput)) {
-//   return await weatherAdvice.handleWindAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 구름량
-// if (weatherAdvice.isCloudRelated(userInput)) {
-//   return await weatherAdvice.handleCloudAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-// // 이슬점
-// if (weatherAdvice.isDewPointRelated(userInput)) {
-//   return await weatherAdvice.handleDewPointAdvice({ lat, lon, locationName, uid }, res);
-// }
-
-//   // (F) “꽃가루” / “미세먼지” 키워드가 없는 경우 → 현재 날씨 조회 + Gemini 요약
-//   const now = new Date();
-//   const isToday = forecastDate.toDateString() === now.toDateString();
-//   const dayLabel = isToday
-//   ? '오늘'
-//   : forecastDate.toLocaleDateString('ko-KR', {
-//       year: 'numeric',
-//       month: 'long',
-//       day: 'numeric',
-//       weekday: 'long'
-//     });
-//   try {
-//     // ★ 수정: getWeather를 현재 날씨만 가져오는 함수로 교체
-//     const weatherData = await getWeather(lat, lon, uid);
-//     if (!weatherData) {
-//       return res.json({ reply: '죄송해요. 현재 날씨 정보를 가져오지 못했어요.' });
-//     }
-
-//   // 사용자 정보 포맷 구성
-//   const userInfo = await getUserProfile(uid);
-//   const userText = userInfo ? `
-// 사용자 정보:
-// - 이름: ${userInfo.name}
-// - 민감 요소: ${userInfo.sensitiveFactors?.join(', ') || '없음'}
-// - 취미: ${userInfo.hobbies?.join(', ') || '없음'}
-// ` : '';
-//   const prompt = `
-// ${userText}
-// ${dayLabel} "${locationName}"의 날씨 정보는 다음과 같습니다:
-// - 기온: ${weatherData.temp}℃
-// - 상태: ${weatherData.condition}
-// - 습도: ${weatherData.humidity}%
-// - 풍속: ${weatherData.wind}m/s
-
-// 사용자에게 친근한 말투로 날씨를 요약하고, 실용적인 조언도 포함해 3~4문장으로 작성해주세요. 😊
-// `;
-
-//     // 🔹 전체 히스토리 + 최신 프롬프트로 구성
-//     const contents = [...conversationStore.getHistory(), { role: 'user', parts: [{ text: prompt }] }];
-
-//     const result = await axios.post(
-//       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-//       { contents }
-//     );
-
-//     const reply = result.data.candidates?.[0]?.content?.parts?.[0]?.text || '답변을 생성하지 못했어요.';
-
-//     // 🔹 Gemini 응답 저장
-//     conversationStore.addBotMessage(reply);
-//     conversationStore.trimTo(10); // 최근 10개까지만 유지 (메모리 절약)
-
-//     // 1) 볼드 마크다운 제거
-//     let formatted = reply.replace(/\*\*/g, '');
-
-//     // 2) “• ” 기준으로 분리하여 앞뒤 공백 제거
-//     const parts = formatted
-//       .split('• ')
-//       .map(s => s.trim())
-//       .filter(s => s.length > 0);
-
-//     // 3) 첫 줄(소개 문장)과 나머지 항목을 구분해서 재조합
-//     const header = parts.shift();
-//     const items = parts.map(p => `- ${p}`);
-
-//     // 4) “오늘 예상 날씨:” 앞뒤로 빈 줄 추가
-//     const idx = items.findIndex(p => p.startsWith('오늘 예상 날씨:'));
-//     if (idx !== -1) {
-//       items[idx] = `\n${items[idx]}`;
-//     }
-
-//     // 5) 최종 문자열 만들기
-//     formatted = [
-//       header,
-//       ...items
-//     ].join('\n');
-
-//     // 6) 응답으로 보내기
-//     res.json({
-//       reply: formatted,
-//       resolvedCoords: { lat, lon },
-//       locationName
-//     });
-
-//     } catch (err) {
-//     console.error('❌ Gemini API 오류 발생!');
-//     console.error('↳ 메시지:', err.message);
-//     console.error('↳ 상태 코드:', err.response?.status);
-//     console.error('↳ 상태 텍스트:', err.response?.statusText);
-//     console.error('↳ 응답 데이터:', JSON.stringify(err.response?.data, null, 2));
-//     console.error('↳ 요청 내용:', err.config?.data);
-
-//     return res.status(err.response?.status || 500).json({
-//       error: 'Gemini API 호출 실패',
-//       message: err.response?.data?.error?.message || err.message
-      
-//     });
-//   }
-// });
 
 
 app.listen(PORT, () => {
