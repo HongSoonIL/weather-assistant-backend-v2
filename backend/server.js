@@ -18,6 +18,13 @@ const conversationStore = require('./conversationStore');
 const { callGeminiForToolSelection, callGeminiForFinalResponse } = require('./geminiUtils');
 const { availableTools, executeTool } = require('./tools');
 
+//프론트엔드와 연결을 위한 상수
+const corsOptions = {
+  origin: '*',
+  methods: 'GET,POST,PUT,DELETE,OPTIONS',
+  allowedHeaders: 'Content-Type,Authorization'
+};
+
 const app = express();
 const PORT = 4000;
 
@@ -28,7 +35,7 @@ const OPENWEATHER_API_KEY  = process.env.OPENWEATHER_API_KEY;
 const GOOGLE_MAPS_API_KEY  = process.env.GOOGLE_MAPS_API_KEY;
 const AMBEE_POLLEN_API_KEY = process.env.AMBEE_POLLEN_API_KEY;
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
 
