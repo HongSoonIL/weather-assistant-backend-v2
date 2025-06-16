@@ -1,23 +1,13 @@
 // firebaseAdmin.js
 const admin = require('firebase-admin');
+const path = require('path');
 
-let serviceAccount;
-try {
-  // Render에서 Secret File로 등록된 경로 (파일명 맞게)
-  serviceAccount = require('/etc/secrets/firebase-key.json');
-} catch (e) {
-  // 로컬 개발용 fallback
-  serviceAccount = require('./lumeeweatherapp-firebase-adminsdk-fbsvc-ffbb9087de.json');
-}
+// 🔐 JSON 키 경로 - 프로젝트 루트에 위치한 JSON 파일
+const serviceAccount = require(path.join(__dirname, 'lumeeweatherapp-firebase-adminsdk-fbsvc-ffbb9087de'));
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-// 🔄 Firestore 인스턴스 내보내기
-const db = admin.firestore();
-
-module.exports = {
-  admin,
-  db,
-};
+const db = admin.firestore(); // Firestore 사용
+module.exports = { admin, db };
