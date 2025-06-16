@@ -199,7 +199,7 @@ app.post('/chat', async (req, res) => {
       }
 
       // 미세먼지 조건
-      if (lowerInput.includes('미세먼지') || lowerInput.includes('먼지') || lowerInput.includes('공기')) {
+      if (lowerInput.includes('미세먼지') || lowerInput.includes('먼지') || lowerInput.includes('공기') || lowerInput.includes('마스크') || lowerInput.includes('air')) {
         if (fullWeather?.output?.air?.pm25 !== undefined) {
           const pm25 = fullWeather.output.air.pm25;
           const getAirLevel = v => v <= 15 ? 'Good' : v <= 35 ? 'Moderate' : v <= 75 ? 'Poor' : 'Very Poor';
@@ -212,8 +212,14 @@ app.post('/chat', async (req, res) => {
 
         res.json(responsePayload);
       } catch (err) {
-        console.error('❌ /chat 처리 오류:', err.response ? JSON.stringify(err.response.data) : err.message);
-        res.status(500).json({ error: '요청 처리 중 오류가 발생했습니다.' });
+        const errorMessage =
+          err.response?.data?.error?.message || // Gemini 오류
+          err.response?.data ||                 // 기타 오류
+          err.message ||                        // 일반 오류
+          '요청 처리 중 오류가 발생했습니다.';
+
+        console.error('❌ /chat 처리 오류:', errorMessage);
+        res.status(500).json({ error: errorMessage });
       }
 });
 // 실시간 위치
