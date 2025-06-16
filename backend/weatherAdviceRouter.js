@@ -8,7 +8,7 @@ const { getUserProfile } = require('./userProfileUtils');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 function isAirRelated(text) {
-  const keywords = ['미세먼지', '공기', '공기질', '초미세먼지', '황사', '먼지', '숨쉬기', 'air', 'quality'];
+  const keywords = ['미세먼지', '공기', '공기질', '초미세먼지', '황사', '먼지', '숨쉬기', 'air', 'quality', '마스크'];
   return keywords.some(kw => text.includes(kw));
 }
 
