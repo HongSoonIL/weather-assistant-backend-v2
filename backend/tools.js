@@ -78,10 +78,17 @@ async function executeTool(functionCall, userCoords) {
     getPollenAmbee(lat, lon)
     ]);
 
-  const includeGraph = args.graph_needed || userInput.includes('온도') || userInput.includes('기온') || userInput.includes('그래프');
+    const includeGraph =
+      args.graph_needed ||
+      userInput.includes('온도') ||
+      userInput.includes('기온') ||
+      userInput.includes('그래프');
+
   const hourlyTemps = [];
 
   if (weather?.hourly && includeGraph) {
+    console.log('📈 hourlyTemps:', hourlyTemps);
+
     const hourly = weather.hourly;
     const offsetMs = (weather.timezone_offset || 0) * 1000;
     const localNow = new Date(Date.now() + offsetMs);

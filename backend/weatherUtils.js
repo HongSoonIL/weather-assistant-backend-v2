@@ -2,32 +2,8 @@ const axios = require('axios');
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
 
 
-async function getWeather(lat, lon, forecastTime = null) {
-  const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,daily,alerts&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
-  const res = await axios.get(url);
-  const data = res.data;
-
-  let target;
-  if (!forecastTime) {
-    target = data.current;
-  } else {
-    target = data.hourly.reduce((prev, curr) =>
-      Math.abs(curr.dt * 1000 - forecastTime) < Math.abs(prev.dt * 1000 - forecastTime) ? curr : prev
-    );
-  }
-
-  return {
-    temp: Math.round(target.temp),
-    feelsLike: Math.round(target.feels_like),
-    condition: target.weather?.[0]?.description || '정보 없음',
-    humidity: target.humidity,
-    uvi: target.uvi,
-    cloud: target.clouds,
-    dewPoint: target.dew_point,
-    visibility: target.visibility,
-    wind: target.wind_speed,
-    windDeg: target.wind_deg
-  };
+async function getWeather(lat, lon) {
+  return await getWeatherByCoords(lat, lon);
 }
 
 async function getWeatherByCoords(lat, lon) {
