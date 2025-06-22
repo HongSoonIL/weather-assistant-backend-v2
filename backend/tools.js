@@ -123,7 +123,7 @@ async function executeTool(functionCall, userCoords) {
         tool_function_name: 'get_full_weather_with_context',
         output: {
           locationName,
-          date: formattedDate, \
+          date: formattedDate, 
           weather,
           air,
           pollen,
