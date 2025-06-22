@@ -65,12 +65,21 @@ async function executeTool(functionCall, userCoords) {
       if (!userCoords) throw new Error('현재 위치가 제공되지 않았습니다.');
       lat = userCoords.latitude;
       lon = userCoords.longitude;
+      
+      // 🔥 현재 위치의 지역명을 가져옴
+      try {
+        locationName = await reverseGeocode(lat, lon);
+        console.log('📍 현재 위치 지역명:', locationName);
+      } catch (error) {
+        console.error('📍 현재 위치 지역명 조회 실패:', error);
+        locationName = '현재 위치'; // 폴백
+      }
     } else {
       const geo = await geocodeGoogle(args.location);
       if (!geo) throw new Error(`'${args.location}'의 좌표를 찾을 수 없습니다.`);
       lat = geo.lat;
       lon = geo.lon;
-       locationName = args.location;  // 추가
+      locationName = args.location;
     }
 
     const [weather, air, pollen] = await Promise.all([
@@ -83,7 +92,17 @@ async function executeTool(functionCall, userCoords) {
       args.graph_needed ||
       userInput.includes('온도') ||
       userInput.includes('기온') ||
-      userInput.includes('그래프');
+      userInput.includes('그래프')||
+      userInput.includes('temperature') || 
+      userInput.includes('temp') ||       
+      userInput.includes('graph'); 
+      userInput.includes('뭐 입을까') ||      
+      userInput.includes('뭐 입지') ||        
+      userInput.includes('옷') ||      
+      userInput.includes('what should i wear') ||  
+      userInput.includes('what to wear') ||       
+      userInput.includes('clothing') ||           
+      userInput.includes('outfit');               
 
   const hourlyTemps = [];
 
@@ -122,7 +141,7 @@ async function executeTool(functionCall, userCoords) {
       return {
         tool_function_name: 'get_full_weather_with_context',
         output: {
-          locationName,
+          location: locationName, // 🔥 location 필드로 지역명 전달
           date: formattedDate, 
           weather,
           air,
