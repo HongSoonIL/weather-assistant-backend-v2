@@ -3,7 +3,7 @@ const { getWeather } = require('./weatherUtils');
 const { getAirQuality, getPollenAmbee } = require('./airPollenUtils');
 const axios = require('axios');
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
-
+const { extractDateFromText, getNearestForecastTime } = require('./timeUtils');
 /**
  * @fileoverview Gemini API에 제공할 "도구(Tool)"를 정의하고,
  * Gemini의 요청에 따라 해당 도구를 실행하는 로직을 담당합니다.
@@ -70,6 +70,7 @@ async function executeTool(functionCall, userCoords) {
       if (!geo) throw new Error(`'${args.location}'의 좌표를 찾을 수 없습니다.`);
       lat = geo.lat;
       lon = geo.lon;
+       locationName = args.location;  // 추가
     }
 
     const [weather, air, pollen] = await Promise.all([
@@ -106,17 +107,29 @@ async function executeTool(functionCall, userCoords) {
     }
   }
 
-  return {
-    tool_function_name: 'get_full_weather_with_context',
-    output: {
-      locationName,
-      date: args.date || '오늘',
-      weather,
-      air,
-      pollen,
-      hourlyTemps
-    }
-  };
+      // timeUtils를 사용하여 실제 날짜 계산 
+      const requestedDate = extractDateFromText(args.user_input);
+      const formattedDate = requestedDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+
+      console.log('📅 사용자 입력:', args.user_input);
+      console.log('📅 추출된 날짜:', requestedDate);
+      console.log('📅 포맷된 날짜:', formattedDate);
+
+      return {
+        tool_function_name: 'get_full_weather_with_context',
+        output: {
+          locationName,
+          date: formattedDate, 
+          weather,
+          air,
+          pollen,
+          hourlyTemps
+        }
+      };
 }
 
 module.exports = {

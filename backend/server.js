@@ -199,20 +199,24 @@ app.post('/chat', async (req, res) => {
       const lowerInput = userInput.toLowerCase();
 
       // 그래프 조건 (기온/온도/그래프 등)
-      if (lowerInput.includes('기온') || lowerInput.includes('온도') || lowerInput.includes('그래프')) {
+      if (lowerInput.includes('기온') || lowerInput.includes('온도') || lowerInput.includes('그래프')
+        || lowerInput.includes('air') || lowerInput.includes('quality') || lowerInput.includes('dust') || lowerInput.includes('mask') || lowerInput.includes('pollution')) {
         if (fullWeather?.output?.hourlyTemps?.length > 0) {
           responsePayload.graph = fullWeather.output.hourlyTemps;
+          responsePayload.graphDate = fullWeather.output.date; // 날짜 정보 추가
         }
       }
 
       // 미세먼지 조건
-      if (lowerInput.includes('미세먼지') || lowerInput.includes('먼지') || lowerInput.includes('공기') || lowerInput.includes('마스크') || lowerInput.includes('air')) {
+      if (lowerInput.includes('미세먼지') || lowerInput.includes('먼지') || lowerInput.includes('공기') || lowerInput.includes('마스크') 
+        || lowerInput.includes('air') || lowerInput.includes('mask') || lowerInput.includes('dust') || lowerInput.includes('quality') || lowerInput.includes('pollution')) {
         if (fullWeather?.output?.air?.pm25 !== undefined) {
           const pm25 = fullWeather.output.air.pm25;
           const getAirLevel = v => v <= 15 ? 'Good' : v <= 35 ? 'Moderate' : v <= 75 ? 'Poor' : 'Very Poor';
           responsePayload.dust = {
             value: pm25,
-            level: getAirLevel(pm25)
+            level: getAirLevel(pm25),
+            date: fullWeather.output.date // 추가
           };
         }
       }
