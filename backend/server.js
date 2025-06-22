@@ -200,6 +200,9 @@ app.post('/chat', async (req, res) => {
 
       // 그래프 조건 (기온/온도/그래프 등)
       if (lowerInput.includes('기온') || lowerInput.includes('온도') || lowerInput.includes('그래프')
+        || lowerInput.includes('temperature') || lowerInput.includes('temp') || lowerInput.includes('graph') 
+        || lowerInput.includes('뭐 입을까') || lowerInput.includes('뭐 입지') || lowerInput.includes('옷')
+        || lowerInput.includes('what should i wear') || lowerInput.includes('what to wear') || lowerInput.includes('clothing') || lowerInput.includes('outfit')
         || lowerInput.includes('air') || lowerInput.includes('quality') || lowerInput.includes('dust') || lowerInput.includes('mask') || lowerInput.includes('pollution')) {
         if (fullWeather?.output?.hourlyTemps?.length > 0) {
           responsePayload.graph = fullWeather.output.hourlyTemps;
