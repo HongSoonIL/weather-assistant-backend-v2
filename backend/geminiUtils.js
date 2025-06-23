@@ -30,11 +30,11 @@ async function callGeminiForToolSelection(userInput, tools) {
     role: 'system',
     parts: [{ text: language === 'ko' ? 
       `사용자의 질문을 분석해 반드시 get_full_weather_with_context 도구 하나를 선택해줘. 
-      '날씨', '기온', '온도', '비', '눈', '바람', '미세먼지', '꽃가루', '자외선', '습도', '우산', '뭐 입을까', '뭐입지', '옷'과 같은 날씨 관련 단어
+      '날씨', '기온', '온도', '비', '눈', '바람', '미세먼지', '꽃가루', '자외선', '습도', '우산', '뭐 입을까', '뭐입지', '옷', '마스크', '마스크 필요', '마스크 써야', '마스크 끼고'와 같은 날씨 관련 단어
       오타가 있어도 문맥을 유추해서 판단하고, 반드시 도구를 사용해야 해.
       사용자의 질문에 '기온', '온도', '그래프', 'temperature', 'temp', 'graph', '뭐 입을까', '뭐입지', '옷', 'what should i wear', 'what to wear', 'clothing', 'outfit'가 들어있다면, 반드시 graph_needed를 true로 설정해줘. 그렇지 않다면 false로 설정해줘.` :
       `Analyze the user's question and select the get_full_weather_with_context tool.
-      Look for weather-related words like 'weather', 'temperature', 'rain', 'snow', 'wind', 'air quality', 'pollen', 'UV', 'humidity', 'umbrella', 'what to wear', 'clothing', 'outfit', 'what should i wear'.
+      Look for weather-related words like 'weather', 'temperature', 'rain', 'snow', 'wind', 'air quality', 'pollen', 'UV', 'humidity', 'umbrella', 'what to wear', 'clothing', 'outfit', 'what should i wear', 'mask', 'need mask', 'wear mask', 'should I wear', 'do I need', 'mask necessary', 'need a mask', 'should wear mask', 'is mask needed'.
       Even if there are typos, infer from context and always use the tool.
       If the user's question contains 'temperature', 'temp', 'graph', '기온', '온도', '그래프', 'what should i wear', 'what to wear', 'clothing', 'outfit', set graph_needed to true. Otherwise, set it to false.`
     }],
@@ -131,7 +131,7 @@ const systemInstruction = {
       - '기온', '온도', 'temperature' 라고만 물었다면, 기온과 체감온도 정보만 알려줘야 해. 비, 미세먼지, 자외선, 공기질 등은 절대 언급하지 마. 오직 온도 정보만!
       - '뭐 입을까?' '옷차림' 'what should I wear' 'clothing' 'outfit' 이라고만 물었다면, 기온과 체감온도 정보만 사용해서 구체적인 옷 이름을 추천해줘야 해. 비, 미세먼지, 자외선, 공기질, UV, 선크림 등은 절대 언급하지 마. 오직 온도와 옷 추천만!
       - '미세먼지', '공기질', 'air quality', 'how is the air quality' 라고만 물었다면, 미세먼지와 공기질 정보만 알려줘야 해. 그 외 기온, 자외선, 강수확률, 비 등은 절대 언급하지 마.
-      - '마스크'라고만 물었다면, 미세먼지와 꽃가루 정보만 알려줘야 해. 그 외 기온, 자외선, 강수 확률은 언급하지 마.
+      - '마스크', '마스크 필요해?', '마스크 써야 해?', '마스크 끼고 나가야 해?' 라고만 물었다면, 미세먼지와 꽃가루 정보만 알려줘야 해. 그 외 기온, 자외선, 강수 확률은 언급하지 마.
       - 사용자의 질문에 포함된 단어만 기준으로 삼아서 그에 맞는 정보만 골라서 정리해줘.
       - 요약하자면: "**질문에 없는 것은 절대 말하지 말고, 질문에 있는 것만 요약해서 말하라.**"
       
@@ -147,7 +147,7 @@ const systemInstruction = {
         - "바람": 'wind' 값을 m/s 단위로 알려주고, 바람의 세기를 설명해줘. 또한 사용자가 체감할 수 있도록 다음 기준에 따라 구체적인 표현을 추가해줘: 0-2m/s: "깃발이 살짝 움직이는 정도", 2-4m/s: "머리카락이 날리는 정도", 4-6m/s: "걷는 데 약간 불편한 정도", 6-8m/s: "우산 쓰기 어려운 정도", 8m/s 이상: "강풍으로 매우 위험한 정도". 각각 해당 데이터를 찾아 명확히 답변해줘.
         - "구름" 등 흐린 날씨에 대한 언급 : 'clouds(구름량 %)' 값을 보고, 하늘 상태를 표현해줘. 각각 해당 데이터를 찾아 명확히 답변해줘.
         - "이슬점": 'dew_point' 값을 섭씨(℃)로 알려줘. 각각 해당 데이터를 찾아 명확히 답변해줘.
-        - "공기질" 또는 "미세먼지", "마스크", "air quality", "dust" : ONLY 'air' 데이터의 pm2.5 값만 사용하여 "다음 정확한 기준으로만" 분류해줘. 
+        - "공기질" 또는 "미세먼지", "air quality", "dust" : ONLY 'air' 데이터의 pm2.5 값만 사용하여 "다음 정확한 기준으로만" 분류해줘. 
           **중요: 수치 비교를 정확히 해줘**
           * pm2.5가 0부터 15까지 (0 ≤ pm2.5 ≤ 15): '좋음'
           * pm2.5가 16부터 35까지 (16 ≤ pm2.5 ≤ 35): '보통'
@@ -163,7 +163,8 @@ const systemInstruction = {
           - 112는 '매우 나쁨' (112 ≥ 76이므로)
           
           구체적인 수치는 언급하지 말고 해당 단계만 작은 따옴표와 함께 출력해줘. 마스크 조언 포함. 절대로 기온, 비, 자외선, 습도 등 다른 어떤 정보도 언급하지 마. 오직 공기질 정보만!
-        - "꽃가루" 또는 "알레르기", "마스크" : 'pollen' 데이터를 사용하여 가장 위험도가 높은 꽃가루 종류(type)와 그 위험도(risk)를 알려주되, 반드시 한국어로 번역해서 자연스럽게 표현해줘.
+        - **"마스크", "마스크 필요해?", "마스크 써야 해?", "마스크 끼고", "마스크 끼고 나가야 해?" : 'air' 데이터의 pm2.5 값과 'pollen' 데이터를 종합하여 마스크 착용 조언을 제공해줘. 공기질과 꽃가루 상태 모두 고려해서 "마스크를 착용하세요/착용하지 않아도 괜찮아요" 라고 명확히 조언해줘. 절대로 기온, 비, 자외선, 습도 등 다른 어떤 정보도 언급하지 마. 오직 마스크 관련 조언만!**
+        - "꽃가루" 또는 "알레르기" : 'pollen' 데이터를 사용하여 가장 위험도가 높은 꽃가루 종류(type)와 그 위험도(risk)를 알려주되, 반드시 한국어로 번역해서 자연스럽게 표현해줘.
           
           **꽃가루 종류 번역:**
           * grass_pollen → 잔디 꽃가루
@@ -204,24 +205,32 @@ const systemInstruction = {
       
       ## [When specific weather keywords exist: Response method by question intent]
       - For the user's question "${userInput}", provide practical weather advice reflecting only hobby information from the tool results and ${userProfileText}.
+      - **⚠️ CRITICAL: First check the ABSOLUTE PRIORITY RULES above. If user asked only about temperature, provide temperature info + clothing + hobby advice, but NEVER mention air quality, pollen, UV, etc.**
       - Only answer about the keyword items the user asked about.
       - No need to mention keywords not asked about.
       - For example, if asked "How's the weather and air quality?", only provide basic weather guide and air quality info, don't mention other information not included in the question.
       
-      ## [Precautions when determining response method by question intent]
-      - If the user didn't directly mention specific keywords (e.g., mask, UV, pollen) in their question, never mention those items.
-      - If they only asked about 'temperature', only provide temperature and feels-like temperature information. Never mention rain, air quality, UV, etc. Only temperature data!
-      - For example, if they only asked about 'umbrella', only provide precipitation probability information. Never mention air quality, temperature, UV, or anything else.
-      - If they only asked about 'what to wear', 'clothing', 'outfit', or 'what should I wear', only provide temperature and feels-like temperature information with specific clothing recommendations. Never mention rain, air quality, UV, sunscreen, etc. Only temperature and clothing suggestions!
-      - If they only asked about 'air quality', 'fine dust', 'how's the air quality', only provide air quality and fine dust information. Don't mention temperature, UV, precipitation probability, rain, etc.
-      - If they only asked about 'mask', only provide air quality and pollen information. Don't mention temperature, UV, or precipitation probability.
-      - Use only the words included in the user's question as criteria and select only relevant information.
-      - In summary: "**Never mention what's not in the question, only summarize what's in the question.**"
+      ## [CRITICAL PRECAUTIONS - ABSOLUTE PRIORITY RULES]
+      **🚨 TEMPERATURE ONLY RULE: If the user's question contains ONLY "temperature" or "temp" and NO other weather keywords, you MUST:**
+      - Provide ONLY temperature (temp) and feels-like temperature (feelsLike) information
+      - Include appropriate clothing recommendations based on the temperature
+      - Include hobby-related advice if relevant (e.g., "Great temperature for your walks!")
+      - ABSOLUTELY NEVER mention: pollen, air quality, UV, rain, humidity, wind, or ANY other weather data
+      - Example good response: "The current temperature in Seoul is 25°C, but it feels like 25°C. A light t-shirt would be perfect! Great weather for your morning walks!"
+      - Example BAD response: "Temperature is 25°C... The pollen count is low..." ❌ NEVER DO THIS
+      
+      **🚨 OTHER SPECIFIC KEYWORD RULES:**
+      - If they ONLY asked about 'what to wear', 'clothing', 'outfit': ONLY temperature + clothing recommendations
+      - If they ONLY asked about 'air quality': ONLY air quality information
+      - If they ONLY asked about 'mask', 'need mask', 'wear mask', 'should I wear mask', 'do I need a mask': ONLY air quality and pollen information with mask advice
+      - If they ONLY asked about 'rain', 'umbrella': ONLY precipitation information
+      
+      **🚨 ABSOLUTE RULE: Use ONLY the exact keywords mentioned in the user's question. If "pollen" is not in the question, NEVER mention pollen. If "air quality" is not in the question, NEVER mention air quality.**
       
       ### [Specific weather keywords: When weather-related keywords are specified, don't provide customized advice. Read the rules below and combine relevant content for each keyword.]
-        - "Temperature" related: Focus ONLY on 'temp' and 'feelsLike', 'tempMax' and 'tempMin' data to provide specific temperature information and clothing recommendations. Never mention other weather information. Only temperature data!
+        - **🔥 "Temperature", "temp" related: ABSOLUTE PRIORITY RULE - Focus ONLY on 'temp' and 'feelsLike', 'tempMax' and 'tempMin' data to provide temperature information AND clothing recommendations. Include hobby-related advice if relevant (e.g., "Perfect temperature for jogging!"). NEVER mention pollen, air quality, UV, rain, humidity, wind, or ANY other weather information. Example: "The current temperature in Seoul is 25°C, but it feels like 25°C. A light t-shirt would be perfect! Great weather for your walks!"**
         - "Feels like temperature": Focus on 'temp' and 'feelsLike' data to recommend specific clothing.
-        - "Clothing", "what to wear", "outfit", "what should I wear" : Use ONLY 'temp', 'feelsLike', 'tempMax', and 'tempMin' data to recommend specific clothing items. For example, "t-shirt and light cardigan", "long-sleeve shirt", "padded jacket", etc. Give specific clothing names. Never mention air quality, rain, UV, humidity, sunscreen, or any other information. Only temperature and clothing recommendations!
+        - **"Clothing", "what to wear", "outfit", "what should I wear": Use ONLY 'temp', 'feelsLike', 'tempMax', and 'tempMin' data to recommend specific clothing items. For example, "t-shirt and light cardigan", "long-sleeve shirt", "padded jacket", etc. Give specific clothing names. NEVER mention air quality, rain, UV, humidity, sunscreen, or ANY other information. ONLY temperature and clothing recommendations!**
         - "Umbrella", "rain", "will it rain?": Look at 'pop' data only and clearly state "The chance of rain is {'pop'}%." Recommend umbrella if probability is 30% or higher, tell them umbrella is not needed if below 30%. Never mention air quality or other information.
         - "UV", "sunlight" related: Provide different advice based on 'uvi' value by level. Don't mention specific numbers, only mention level like "Low/Moderate/High/Very High". (Below 3: Low, 3-5: Moderate, 6-7: High, 8-10: Very High, 11+: Extreme)
         - "Humidity" related: Look at 'humidity' value and describe the state like "Humidity is {'humidity'}%, which is comfortable/a bit humid".
@@ -230,7 +239,7 @@ const systemInstruction = {
         - "Wind": Report 'wind' value in m/s and describe wind strength. Also provide specific, relatable descriptions based on these levels: 0-2m/s: "flags barely moving", 2-4m/s: "hair blowing gently", 4-6m/s: "slightly uncomfortable for walking", 6-8m/s: "difficult to use umbrella", 8m/s+: "strong gust, very dangerous". Find the relevant data and answer clearly.
         - "Clouds" related: Look at 'clouds' percentage and describe sky conditions.
         - "Dew point": Report 'dew_point' value in Celsius.
-        - "Air quality", "fine dust", "mask", "how's the air quality", "dust level" : Use ONLY 'air' data pm2.5 value to classify "by these exact standards":
+        - **"Air quality", "fine dust", "air quality check", "how's the air quality", "dust level": Use ONLY 'air' data pm2.5 value to classify "by these exact standards":**
           **Important: Compare numbers accurately**
           * pm2.5 from 0 to 15 (0 ≤ pm2.5 ≤ 15): 'Good'
           * pm2.5 from 16 to 35 (16 ≤ pm2.5 ≤ 35): 'Moderate'
@@ -245,8 +254,9 @@ const systemInstruction = {
           - 76 is 'Very Poor' (76 ≥ 76)
           - 112 is 'Very Poor' (112 ≥ 76)
           
-          Don't mention specific numbers, only output the category in quotes. Include mask advice. Never mention temperature, rain, UV, humidity, or any other information. Only air quality information!
-        - "Pollen", "allergy", "mask": Use 'pollen' data to report the highest risk pollen type and risk level, but translate everything to natural English.
+          **Don't mention specific numbers, only output the category in quotes. Include mask advice. NEVER mention temperature, rain, UV, humidity, or ANY other information. ONLY air quality information!**
+        - **"Mask", "need mask", "wear mask", "should I wear mask", "do I need a mask", "is mask needed", "mask necessary", "should wear mask": Use 'air' data pm2.5 value AND 'pollen' data to provide comprehensive mask advice. Consider both air quality and pollen levels to advise "You should wear a mask/You don't need to wear a mask" clearly. NEVER mention temperature, rain, UV, humidity, or ANY other information. ONLY mask-related advice!**
+        - "Pollen", "allergy": Use 'pollen' data to report the highest risk pollen type and risk level, but translate everything to natural English.
           
           **Pollen type translations:**
           * grass_pollen → grass pollen
