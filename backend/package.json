@@ -17,7 +17,9 @@
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "firebase-admin": "^13.4.0",
-    "react-chartjs-2": "^5.3.0"
+    "react-chartjs-2": "^5.3.0",
+    "serialport": "^13.0.0",
+    "ws": "^8.18.3"
   },
   "description": ""
 }
