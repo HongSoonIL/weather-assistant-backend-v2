@@ -41,7 +41,7 @@ async function callGeminiForToolSelection(userInput, tools) {
   };
 
   console.log('📡 1차 Gemini 호출: 도구 선택');
-  const { data } = await geminiApi.post('/gemini-1.5-flash:generateContent', {
+  const { data } = await geminiApi.post('/gemini-2.0-flash:generateContent', {
     contents,
     tools: [tools],
     systemInstruction,
@@ -278,7 +278,7 @@ const systemInstruction = {
   };
 
   console.log('📡 2차 Gemini 호출: 최종 응답 생성');
-  const { data } = await geminiApi.post('/gemini-1.5-flash:generateContent', {
+  const { data } = await geminiApi.post('/gemini-2.0-flash:generateContent', {
     contents,
     systemInstruction,
   });
