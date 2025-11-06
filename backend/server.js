@@ -5,9 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const http = require('http');
 
-// 아두이노 통신을 위한 모듈들을 불러오기
-const { SerialPort } = require('serialport');
-const { ReadlineParser } = require('@serialport/parser-readline');
+// 라즈베리파이 통신을 위한 모듈들을 불러오기
 const { WebSocketServer } = require('ws');
 
 // 서버 시작 시 API 키 확인 (테스트)
@@ -56,36 +54,19 @@ wss.on('connection', ws => {
     console.log('[웹소켓] 프론트엔드와 연결되었습니다.');
 });
 
-// 아두이노 시리얼 포트 연결 로직 (bridge.js에서 가져옴)
-try {
-    // ※ 자신의 HC-06 COM 포트 번호로 수정하세요! (기기마다 고유COM포트가 다름)
-    const ARDUINO_COM_PORT = 'COM7'; 
-    const port = new SerialPort({ path: ARDUINO_COM_PORT, baudRate: 9600 });
-    const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
-
-    console.log(`[시리얼] ${ARDUINO_COM_PORT} 포트에서 아두이노 신호 수신 대기중...`);
-
-    parser.on('data', data => {
-        const trimmedData = data.trim();
-        if (trimmedData === 'KNOCK') {
-            console.log('[시리얼] "KNOCK" 신호 수신!');
-            // 연결된 모든 프론트엔드 클라이언트에게 "KNOCK" 메시지 전송
-            wss.clients.forEach(client => {
-                if (client.readyState === client.OPEN) {
-                    client.send('KNOCK');
-                }
-            });
+// 라즈베리파이로부터 Wi-Fi를 통해 노크 신호를 받을 엔드포인트
+app.post('/knock', (req, res) => {
+    console.log('[HTTP] ✊ 라즈베리파이로부터 "KNOCK" 신호 수신!');
+    
+    // 연결된 모든 프론트엔드 클라이언트에게 "KNOCK" 메시지 전송
+    wss.clients.forEach(client => {
+        if (client.readyState === client.OPEN) {
+            client.send('KNOCK');
         }
     });
-
-    port.on('error', err => {
-        console.error('[시리얼] 오류:', err.message);
-    });
-
-} catch (err) {
-    console.warn('[시리얼] 아두이노 연결에 실패했습니다. COM 포트를 확인하세요.');
-    console.warn(err.message);
-}
+    
+    res.status(200).send('OK'); // 라즈베리파이에게 정상 수신 응답
+});
 
 //  채팅 제목 자동 생성 API
 app.post('/generate-title', async (req, res) => {
