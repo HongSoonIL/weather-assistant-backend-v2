@@ -33,7 +33,6 @@ const app = express();
 const PORT = 4000;
 
 // ✅ 필수 API 키
-// 키 외부 노출을 막기 위해 배포 후 .env 파일로 분리할 수 있음.
 const GEMINI_API_KEY       = process.env.GEMINI_API_KEY;
 const OPENWEATHER_API_KEY  = process.env.OPENWEATHER_API_KEY;
 const GOOGLE_MAPS_API_KEY  = process.env.GOOGLE_MAPS_API_KEY;
@@ -126,8 +125,6 @@ Title:`;
     
   } catch (err) {
     console.error('❌ 제목 생성 실패:', err.message);
-    
-    // 폴백: 키워드 기반 영어 제목 생성
     const fallbackTitle = generateEnglishFallbackTitle(userInput);
     res.json({ title: fallbackTitle });
   }
@@ -154,15 +151,9 @@ function generateEnglishFallbackTitle(input) {
     }
   }
 
-  // 지역명 추출 시도
   const cityMap = {
-    '서울': 'Seoul Weather',
-    '부산': 'Busan Weather', 
-    '대구': 'Daegu Weather',
-    '인천': 'Incheon Weather',
-    '광주': 'Gwangju Weather',
-    '대전': 'Daejeon Weather',
-    '울산': 'Ulsan Weather'
+    '서울': 'Seoul Weather', '부산': 'Busan Weather', '대구': 'Daegu Weather',
+    '인천': 'Incheon Weather', '광주': 'Gwangju Weather', '대전': 'Daejeon Weather', '울산': 'Ulsan Weather'
   };
   
   for (const [korean, english] of Object.entries(cityMap)) {
@@ -181,7 +172,11 @@ app.post('/chat', async (req, res) => {
     conversationStore.addUserMessage(userInput);
 
     try {
-      // 1. 도구 선택
+      // 1. 사용자 프로필 미리 가져오기 (도구 실행에 필요함)
+      const userProfile = await getUserProfile(uid);
+      if (userProfile) console.log(`👤 사용자 프로필 로드됨:`, userProfile.schedule);
+
+      // 2. 도구 선택
       const toolSelectionResponse = await callGeminiForToolSelection(userInput, availableTools);
       let functionCalls = toolSelectionResponse.candidates?.[0]?.content?.parts
         .filter(p => p.functionCall)
@@ -199,15 +194,11 @@ app.post('/chat', async (req, res) => {
         throw new Error('도구 선택이 이루어지지 않았습니다.');
       }
 
-      // 2. 도구 실행
-      const executionPromises = functionCalls.map(call => executeTool(call, coords));
+      // 3. 도구 실행 (🔥 중요: userProfile을 세 번째 인자로 전달)
+      const executionPromises = functionCalls.map(call => executeTool(call, coords, userProfile));
       const results = await Promise.allSettled(executionPromises);
       const toolOutputs = results.filter(r => r.status === 'fulfilled').map(r => r.value);
       results.filter(r => r.status === 'rejected').forEach(r => console.error('❌ 도구 실행 실패:', r.reason));
-
-      // 3. 사용자 프로필 가져오기
-      const userProfile = await getUserProfile(uid);
-      if (userProfile) console.log(`👤 사용자 프로필:`, userProfile);
 
       // 4. 최종 Gemini 응답 생성
       const finalResponse = await callGeminiForFinalResponse(
@@ -215,19 +206,19 @@ app.post('/chat', async (req, res) => {
         toolSelectionResponse,
         toolOutputs,
         userProfile,
-        functionCalls // 반드시 넘겨야 오류 없음
+        functionCalls
       );
 
       const reply = finalResponse.candidates?.[0]?.content?.parts?.[0]?.text || '죄송해요, 답변 생성에 실패했어요.';
       console.log('🤖 최종 생성 답변:', reply);
-      // LLM의 답변 텍스트가 아닌, '실행된 도구'를 기준으로 데이터를 첨부합니다.
+      
       const responsePayload = { reply };
 
-      // ✅ 5. 사용자 질문에 따른 조건 분기
+      // 5. 사용자 질문에 따른 그래프/미세먼지 데이터 첨부
       const fullWeather = toolOutputs.find(o => o.tool_function_name === 'get_full_weather_with_context');
       const lowerInput = userInput.toLowerCase();
 
-      // 그래프 조건 (기온/온도/그래프 등)
+      // 그래프 조건
       if (lowerInput.includes('기온') || lowerInput.includes('온도') || lowerInput.includes('그래프')
         || lowerInput.includes('temperature') || lowerInput.includes('temp') || lowerInput.includes('graph') 
         || lowerInput.includes('뭐 입을까') || lowerInput.includes('뭐 입지') || lowerInput.includes('옷')
@@ -235,7 +226,7 @@ app.post('/chat', async (req, res) => {
         || lowerInput.includes('air') || lowerInput.includes('quality') || lowerInput.includes('dust') || lowerInput.includes('mask') || lowerInput.includes('pollution')) {
         if (fullWeather?.output?.hourlyTemps?.length > 0) {
           responsePayload.graph = fullWeather.output.hourlyTemps;
-          responsePayload.graphDate = fullWeather.output.date; // 날짜 정보 추가
+          responsePayload.graphDate = fullWeather.output.date;
         }
       }
 
@@ -248,25 +239,26 @@ app.post('/chat', async (req, res) => {
           responsePayload.dust = {
             value: pm25,
             level: getAirLevel(pm25),
-            date: fullWeather.output.date // 추가
+            date: fullWeather.output.date
           };
         }
       }
 
-        res.json(responsePayload);
-      } catch (err) {
-        const errorMessage =
-          err.response?.data?.error?.message || // Gemini 오류
-          err.response?.data ||                 // 기타 오류
-          err.message ||                        // 일반 오류
-          '요청 처리 중 오류가 발생했습니다.';
+      res.json(responsePayload);
 
-        console.error('❌ /chat 처리 오류:', errorMessage);
-        res.status(500).json({ error: errorMessage });
-      }
+    } catch (err) {
+      const errorMessage =
+        err.response?.data?.error?.message ||
+        err.response?.data ||
+        err.message ||
+        '요청 처리 중 오류가 발생했습니다.';
+
+      console.error('❌ /chat 처리 오류:', errorMessage);
+      res.status(500).json({ error: errorMessage });
+    }
 });
-// 실시간 위치
-// 1. 위도/경도로 지역명 반환
+
+// 실시간 위치 및 날씨 관련 엔드포인트들
 app.post('/reverse-geocode', async (req, res) => {
   const { latitude, longitude } = req.body;
   try {
@@ -278,9 +270,6 @@ app.post('/reverse-geocode', async (req, res) => {
   }
 });
 
-
-// 사용자의 위도/경도로 날씨 정보만 반환하는 API
-// 2. 위도/경도로 날씨 정보
 app.post('/weather', async (req, res) => {
   const { latitude, longitude } = req.body;
   try {
@@ -292,42 +281,32 @@ app.post('/weather', async (req, res) => {
   }
 });
 
-// 3. 특정 시간 기온 변화 그래프 출력용
 app.post('/weather-graph', async (req, res) => {
   const { latitude, longitude } = req.body;
   try {
     const url = `https://api.openweathermap.org/data/3.0/onecall?lat=${latitude}&lon=${longitude}&exclude=minutely,daily,alerts&appid=${OPENWEATHER_API_KEY}&units=metric&lang=kr`;
     const result = await axios.get(url);
-    const data = result.data; // 한 번에 hourly + timezone_offset 사용
+    const data = result.data;
 
     const hourly = data.hourly;
     const timezoneOffsetSec = data.timezone_offset || 0;
     const offsetMs = timezoneOffsetSec * 1000;
 
-    // 1. 현재 UTC 시각
-    const utcNow = new Date();  // 무조건 UTC
-
-    // 2. 해당 지역 현지 기준 시각을 계산
+    const utcNow = new Date();
     const localNow = new Date(utcNow.getTime() + offsetMs);
-    localNow.setMinutes(0, 0, 0); // 분, 초 제거 → 정각으로
+    localNow.setMinutes(0, 0, 0);
 
     const hourlyTemps = [];
-
     for (let i = 0; i < 6; i++) {
-      // 3. 3시간 간격 target UTC 시각 생성
       const targetLocalTime = new Date(localNow.getTime() + i * 3 * 60 * 60 * 1000);
       const targetUTC = new Date(targetLocalTime.getTime() - offsetMs);
-      // 4. UTC 기준에서 가장 가까운 hourly 데이터 찾기
       const closest = hourly.reduce((prev, curr) => {
         const currTime = curr.dt * 1000;
         return Math.abs(currTime - targetUTC.getTime()) < Math.abs(prev.dt * 1000 - targetUTC.getTime()) ? curr : prev;
       });
 
-      // 5. label은 현지 시간 기준
-      const localTime = new Date(targetUTC.getTime() + offsetMs);
       const hour = new Date(targetUTC.getTime() + offsetMs).getUTCHours();
       const label = `${hour % 12 === 0 ? 12 : hour % 12}${hour < 12 ? 'am' : 'pm'}`;
-      console.log(`✅ label=${label} | local=${localTime.toISOString()} | UTC=${targetUTC.toISOString()} | temp=${Math.round(closest.temp)}`);
 
       hourlyTemps.push({
         hour: label,
@@ -335,19 +314,15 @@ app.post('/weather-graph', async (req, res) => {
       });
     }
 
-        res.json({ hourlyTemps });
-        console.log('📡 최종 hourlyTemps:', hourlyTemps);
+    res.json({ hourlyTemps });
 
-      } catch (err) {
-        console.error('📊 시간별 기온 그래프용 API 실패:', err.message);
-        res.status(500).json({ error: '그래프용 날씨 데이터를 불러오는 데 실패했습니다.' });
-      }
-    });
+  } catch (err) {
+    console.error('📊 시간별 기온 그래프용 API 실패:', err.message);
+    res.status(500).json({ error: '그래프용 날씨 데이터를 불러오는 데 실패했습니다.' });
+  }
+});
 
-
-// 6. 서버를 실행합니다. (app.listen 대신 server.listen 사용)
 server.listen(PORT, () => {
   console.log(`[HTTP] API 서버가 ${PORT} 포트에서 실행 중입니다.`);
   console.log(`[웹소켓] 통신 서버가 ${PORT} 포트에서 함께 실행 중입니다.`);
 });
-
